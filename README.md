@@ -1,8 +1,8 @@
-[![Stars](https://img.shields.io/github/stars/4n0nymou3/multi-proxy-config-fetcher?style=flat-square)](https://github.com/4n0nymou3/multi-proxy-config-fetcher/stargazers)
-[![Forks](https://img.shields.io/github/forks/4n0nymou3/multi-proxy-config-fetcher?style=flat-square)](https://github.com/4n0nymou3/multi-proxy-config-fetcher/network/members)
-[![Issues](https://img.shields.io/github/issues/4n0nymou3/multi-proxy-config-fetcher?style=flat-square)](https://github.com/4n0nymou3/multi-proxy-config-fetcher/issues)
-[![License](https://img.shields.io/github/license/4n0nymou3/multi-proxy-config-fetcher?style=flat-square)](https://github.com/4n0nymou3/multi-proxy-config-fetcher/blob/main/LICENSE)
-[![Activity](https://img.shields.io/github/last-commit/4n0nymou3/multi-proxy-config-fetcher?style=flat-square)](https://github.com/4n0nymou3/multi-proxy-config-fetcher/commits)
+[![Stars](https://img.shields.io/github/stars/10ium/multi-proxy-config-fetcher?style=flat-square)](https://github.com/10ium/multi-proxy-config-fetcher/stargazers)
+[![Forks](https://img.shields.io/github/forks/10ium/multi-proxy-config-fetcher?style=flat-square)](https://github.com/10ium/multi-proxy-config-fetcher/network/members)
+[![Issues](https://img.shields.io/github/issues/10ium/multi-proxy-config-fetcher?style=flat-square)](https://github.com/10ium/multi-proxy-config-fetcher/issues)
+[![License](https://img.shields.io/github/license/10ium/multi-proxy-config-fetcher?style=flat-square)](https://github.com/10ium/multi-proxy-config-fetcher/blob/main/LICENSE)
+[![Activity](https://img.shields.io/github/last-commit/10ium/multi-proxy-config-fetcher?style=flat-square)](https://github.com/10ium/multi-proxy-config-fetcher/commits)
 
 # Multi Proxy Config Fetcher
 
@@ -14,13 +14,13 @@ This project automatically fetches and updates various proxy configurations from
 
 You can directly access the latest configurations through this URL:
 ```
-https://raw.githubusercontent.com/4n0nymou3/multi-proxy-config-fetcher/refs/heads/main/configs/proxy_configs.txt
+https://raw.githubusercontent.com/10ium/multi-proxy-config-fetcher/refs/heads/main/configs/proxy_configs.txt
 ```
 This project features advanced capabilities for proxy configuration management. The retrieved configurations are automatically converted to Sing-box format and stored in a separate JSON file. For each server, its geographical location is identified using the get location method, and the corresponding flag emoji and country name are automatically added to its tag. These features make proxy management and usage significantly more user-friendly and efficient.
 
 Sing-box subscription link:
 ```
-https://raw.githubusercontent.com/4n0nymou3/multi-proxy-config-fetcher/refs/heads/main/configs/singbox_configs.json
+https://raw.githubusercontent.com/10ium/multi-proxy-config-fetcher/refs/heads/main/configs/singbox_configs.json
 ```
 
 ## Channel and URL Performance
@@ -35,7 +35,7 @@ Below is the real-time performance statistics of the configured sources (Telegra
 </div>
 
 ### Detailed Report
-📊 [View Full Interactive Dashboard](https://htmlpreview.github.io/?https://github.com/4n0nymou3/multi-proxy-config-fetcher/blob/main/assets/performance_report.html)
+📊 [View Full Interactive Dashboard](https://htmlpreview.github.io/?https://github.com/10ium/multi-proxy-config-fetcher/blob/main/assets/performance_report.html)
 
 > **Important for Forked Repositories**:  
 If you fork this repository, make sure to replace `USERNAME` in the above link with your GitHub username. This ensures that the link directs to your own interactive dashboard instead of the original project's dashboard. To do this:
