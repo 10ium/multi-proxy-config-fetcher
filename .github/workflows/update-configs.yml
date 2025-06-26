@@ -1,6 +1,7 @@
-name: Update Proxy Configs
+# Name: Update Proxy Configs
+# This workflow automates the fetching, processing, testing, filtering,
+# and deployment of proxy configurations.
 
-# Define when the workflow should run
 on:
   # **تغییر یافته**: فقط روی رویدادهای push و pull_request به برنچ 'test' اجرا شود.
   push:
@@ -9,11 +10,11 @@ on:
   pull_request:
     branches:
       - test
-  
+
   # **غیرفعال شده**: اجرای زمان‌بندی شده. برای فعال کردن مجدد، دو خط زیر را از حالت کامنت خارج کنید.
   # schedule:
-  #   - cron: "0 */6 * * *"
-  
+  #   - cron: "0 */6 * * *" # Runs every 6 hours
+
   # اجازه اجرای دستی از رابط کاربری GitHub را می‌دهد (از طریق دکمه "Run workflow")
   workflow_dispatch:
 
@@ -24,7 +25,7 @@ permissions:
 jobs:
   update-configs:
     # Specifies the runner environment
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # Using Ubuntu for Mihomo installation
 
     steps:
     - name: Checkout repository code
@@ -44,10 +45,30 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        # Ensure requirements.txt includes:
-        # requests
-        # beautifulsoup4
-        # (and any other libraries used by your scripts, e.g., for charts)
+
+    - name: Install Mihomo (Clash Core)
+      # **جدید**: دانلود و نصب Mihomo (که قبلا Clash/Clash Premium/Clash Meta نامیده می‌شد)
+      # برای تست پروکسی‌ها استفاده می‌شود.
+      # این مثال برای معماری linux-amd64 است. برای معماری‌های دیگر (مثل ARM) باید URL را تغییر دهید.
+      run: |
+        MIHOMO_VERSION="v1.18.5" # نسخه دلخواه Mihomo را اینجا مشخص کنید
+        MIHOMO_FILENAME="mihomo-linux-amd64-${MIHOMO_VERSION}"
+        MIHOMO_URL="https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VERSION}/${MIHOMO_FILENAME}.gz"
+        
+        echo "Downloading Mihomo from: ${MIHOMO_URL}"
+        curl -sL -o /tmp/${MIHOMO_FILENAME}.gz ${MIHOMO_URL}
+        
+        echo "Decompressing Mihomo..."
+        gzip -d /tmp/${MIHOMO_FILENAME}.gz
+        
+        echo "Moving Mihomo to /usr/local/bin..."
+        sudo mv /tmp/${MIHOMO_FILENAME} /usr/local/bin/mihomo
+        
+        echo "Making Mihomo executable..."
+        sudo chmod +x /usr/local/bin/mihomo
+        
+        echo "Verifying Mihomo installation:"
+        mihomo -v # برای بررسی نصب صحیح Mihomo
 
     - name: Create output directories
       # Creates the new structured output directories
@@ -55,45 +76,56 @@ jobs:
         mkdir -p subs/text
         mkdir -p subs/base64
         mkdir -p subs/singbox
-        mkdir -p assets # Assuming generate_charts.py might still use this
+        mkdir -p assets # For charts and reports
 
-    - name: Run config fetcher script
-      # Executes the ConfigFetcher script, which fetches configs, adds flags, and saves to subs/text/ and subs/base64/
-      # Assumes ConfigFetcher.py is located at src/ConfigFetcher.py (or fetch_configs.py as in original workflow)
-      run: python src/ConfigFetcher.py # Ensure this path matches your file structure
+    - name: Run Proxy Fetcher Script
+      # **تغییر یافته**: اجرای اسکریپت اصلی main.py که تمام pipeline را اجرا می‌کند.
+      run: python main.py
       continue-on-error: true # Continues workflow even if this step fails
 
-    - name: Generate charts and reports
-      # Executes the script to generate charts and reports
-      # Assumes generate_charts.py is located at src/generate_charts.py
-      run: python src/generate_charts.py
-      continue-on-error: true # Continues workflow even if this step fails
+    # گام‌های ConfigFetcher.py, generate_charts.py, ConfigToSingbox.py حذف شده‌اند،
+    # زیرا main.py اکنون همه این وظایف را هماهنگ می‌کند.
+    # - name: Run config fetcher script
+    #   run: python src/ConfigFetcher.py 
+    #   continue-on-error: true 
 
-    - name: Convert configs to Singbox format
-      # Executes the script to convert relevant configs to Singbox format and saves to subs/singbox/
-      # Assumes ConfigToSingbox.py is located at src/ConfigToSingbox.py
-      run: python src/ConfigToSingbox.py # Ensure this path matches your file structure
-      continue-on-error: true # Continues workflow even if this step fails
+    # - name: Generate charts and reports
+    #   run: python src/generate_charts.py
+    #   continue-on-error: true 
+
+    # - name: Convert configs to Singbox format
+    #   run: python src/ConfigToSingbox.py 
+    #   continue-on-error: true 
+    
+    # توجه: اگر ConfigToSingbox.py هنوز یک اسکریپت جداگانه است و در main.py ادغام نشده،
+    # باید آن را پس از اجرای main.py (یا در داخل main.py) فراخوانی کنید.
+    # فعلاً فرض بر این است که main.py کل فرآیند را پوشش می‌دهد،
+    # اما اگر ConfigToSingbox.py مستقل باقی مانده است، باید دوباره به Workflow اضافه شود:
+    # - name: Convert configs to Singbox format (if still separate)
+    #   run: python ConfigToSingbox.py # مسیر فایل ConfigToSingbox.py را تنظیم کنید
+    #   continue-on-error: true
 
     - name: Update README timestamps and stats
       # Updates timestamps in README files for cache busting and dynamic content
+      # فرض می‌کند فایل‌های README.md, README_FA.md, README_CN.md, README_RU.md
+      # در ریشه مخزن قرار دارند.
       run: |
         timestamp=$(date +%s) # Get current Unix timestamp
         
         # Update English README
-        sed -i "s/channel_stats_chart\.svg?v=[0-9]*/channel_stats_chart.svg?v=$timestamp/" README.md
+        sed -i "s/protocol_distribution_chart\.svg?v=[0-9]*/protocol_distribution_chart.svg?v=$timestamp/" README.md
         sed -i "s/performance_report\.html?v=[0-9]*/performance_report.html?v=$timestamp/" README.md
         
         # Update Persian README
-        sed -i "s/channel_stats_chart\.svg?v=[0-9]*/channel_stats_chart.svg?v=$timestamp/" README_FA.md
+        sed -i "s/protocol_distribution_chart\.svg?v=[0-9]*/protocol_distribution_chart.svg?v=$timestamp/" README_FA.md
         sed -i "s/performance_report\.html?v=[0-9]*/performance_report.html?v=$timestamp/" README_FA.md
         
         # Update Chinese README
-        sed -i "s/channel_stats_chart\.svg?v=[0-9]*/channel_stats_chart.svg?v=$timestamp/" README_CN.md
+        sed -i "s/protocol_distribution_chart\.svg?v=[0-9]*/protocol_distribution_chart.svg?v=$timestamp/" README_CN.md
         sed -i "s/performance_report\.html?v=[0-9]*/performance_report.html?v=$timestamp/" README_CN.md
         
         # Update Russian README
-        sed -i "s/channel_stats_chart\.svg?v=[0-9]*/channel_stats_chart.svg?v=$timestamp/" README_RU.md
+        sed -i "s/protocol_distribution_chart\.svg?v=[0-9]*/protocol_distribution_chart.svg?v=$timestamp/" README_RU.md
         sed -i "s/performance_report\.html?v=[0-9]*/performance_report.html?v=$timestamp/" README_RU.md
       continue-on-error: true # Continues workflow even if this step fails
 
@@ -109,11 +141,11 @@ jobs:
         # Add all generated config files from the new 'subs' directory structure
         git add subs/text/*.txt
         git add subs/base64/*.txt
-        git add subs/singbox/*.json
+        git add subs/singbox/*.json # اگر این فایل‌ها توسط ConfigToSingbox.py تولید می‌شوند
         git add subs/channel_stats.json # Stats file is directly under 'subs'
         
         # Add generated chart and report assets
-        git add assets/channel_stats_chart.svg
+        git add assets/protocol_distribution_chart.svg # نام جدید نمودار
         git add assets/performance_report.html
         
         # Add updated README files
