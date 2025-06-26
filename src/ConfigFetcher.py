@@ -6,16 +6,17 @@ import logging
 import socket 
 import requests
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Optional, Set, Tuple, Any # اضافه شدن Any
+from typing import List, Dict, Optional, Set, Tuple, Any 
 from bs4 import BeautifulSoup
 import base64 
 
-# اضافه شدن برای همزمانی
 import concurrent.futures
 import threading
 
 from config import ProxyConfig, ChannelConfig
 from config_validator import ConfigValidator
+# **تغییر یافته**: وارد کردن SOURCE_URLS از user_settings.py
+from user_settings import SOURCE_URLS 
 
 # پیکربندی لاگ‌گیری (از config.py ارث می‌برد یا اینجا تنظیم می‌کند)
 logging.basicConfig(
@@ -65,6 +66,7 @@ class ConfigFetcher:
         self.max_retry_level = len(self.retry_intervals) - 1 # حداکثر سطح تلاش مجدد
         
         # URLهای کانال‌های بارگذاری شده از user_settings.py (برای مقایسه با موارد کشف شده جدید)
+        # **تغییر یافته**: SOURCE_URLS اکنون به درستی وارد شده است.
         self.initial_user_settings_urls: Set[str] = {self.config._normalize_url(url) for url in SOURCE_URLS}
         # URLهای کانال‌های موجود در stats.json قبلی (برای تشخیص کانال‌های "جدید کشف شده")
         self.previous_stats_urls: Set[str] = set()
@@ -189,7 +191,7 @@ class ConfigFetcher:
                     return flag, country
                 
         except socket.gaierror:
-            # **تغییر یافته**: سطح لاگ از WARNING به DEBUG تغییر یافت تا خروجی شلوغ نشود.
+            # سطح لاگ از WARNING به DEBUG تغییر یافت تا خروجی شلوغ نشود.
             logger.debug(f"نام میزبان قابل حل نیست: '{address}'. موقعیت 'نامشخص' خواهد بود.") 
         except Exception as e:
             logger.error(f"خطای کلی در دریافت موقعیت برای '{address}': {str(e)}")
@@ -529,13 +531,14 @@ class ConfigFetcher:
                         return None # اگر شناسه کانونی تولید نشد، کانفیگ را نادیده بگیرید
                         
                     # **تغییر یافته**: بررسی منحصر به فرد بودن بر اساس شناسه کانونی
+                    # این کانفیگ فقط در صورتی به seen_configs اضافه می‌شود که canonical_id آن قبلاً دیده نشده باشد.
                     if canonical_id not in self.seen_configs:
                         # کانفیگ منحصر به فرد است، در حال دریافت آدرس سرور و موقعیت جغرافیایی
                         server_address = self.validator.get_server_address(clean_config, actual_protocol)
                         if server_address:
                             flag, country = self.get_location(server_address)
                             logger.debug(f"موقعیت برای '{server_address}' یافت شد: {flag} {country}")
-                        # **تغییر یافته**: حذف لاگ warning برای عدم یافتن پرچم
+                        # **تغییر یافته**: حذف لاگ warning برای عدم یافتن پرچم (به debug منتقل شد)
                         # else:
                         #     logger.debug(f"آدرس سرور برای پروتکل '{actual_protocol}' از کانفیگ استخراج نشد: '{clean_config[:min(len(clean_config), 50)]}...'.")
                     
@@ -544,6 +547,7 @@ class ConfigFetcher:
                         channel.metrics.protocol_counts[actual_protocol] = channel.metrics.protocol_counts.get(actual_protocol, 0) + 1
                         
                         # **تغییر یافته**: افزودن canonical_id به seen_configs
+                        # این تنها جایی است که seen_configs آپدیت می‌شود.
                         self.seen_configs.add(canonical_id) 
                         self.protocol_counts[actual_protocol] += 1
                         logger.debug(f"کانفیگ منحصر به فرد '{actual_protocol}' یافت شد: '{clean_config[:min(len(clean_config), 50)]}...' (ID: {canonical_id[:min(len(canonical_id), 20)]}...).")
@@ -556,6 +560,7 @@ class ConfigFetcher:
                             'canonical_id': canonical_id # **جدید**: شناسه کانونی را هم برگردانید
                         }
                     else:
+                        # اگر canonical_id قبلا دیده شده باشد، این کانفیگ تکراری است.
                         logger.info(f"کانفیگ تکراری '{actual_protocol}' با شناسه کانونی {canonical_id[:min(len(canonical_id), 20)]}... نادیده گرفته شد: '{clean_config[:min(len(clean_config), 50)]}...'.")
                 else:
                     logger.debug(f"اعتبارسنجی پروتکل '{actual_protocol}' برای کانفیگ '{clean_config[:min(len(clean_config), 50)]}...' ناموفق بود. نادیده گرفته شد.")
@@ -588,7 +593,7 @@ class ConfigFetcher:
         if date >= cutoff_date:
             return True
         else:
-            logger.debug(f"کانفیگ به دلیل قدیمی بودن تاریخ (تاریخ: {date}) نadیده گرفته شد.")
+            logger.debug(f"کانفیگ به دلیل قدیمی بودن تاریخ (تاریخ: {date}) نادیده گرفته شد.")
             return False
 
     def balance_protocols(self, configs: List[Dict[str, str]]) -> List[Dict[str, str]]:
@@ -704,6 +709,7 @@ class ConfigFetcher:
             for cfg_dict in all_configs:
                 # اطمینان حاصل کنید که canonical_id واقعاً در دیکشنری موجود است
                 canonical_id = cfg_dict.get('canonical_id') 
+                # این بررسی برای اطمینان بیشتر است، زیرا process_config باید آن را اضافه کرده باشد
                 if canonical_id and canonical_id not in seen_canonical_ids_for_final_list:
                     seen_canonical_ids_for_final_list.add(canonical_id)
                     final_unique_configs_list.append(cfg_dict)
@@ -727,8 +733,8 @@ class ConfigFetcher:
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(encoded_content)
             logger.info(f"محتوای Base64 شده در '{file_path}' ذخیره شد.")
-        except Exception as e:
-            logger.error(f"خطا در ذخیره فایل Base64 شده '{file_path}': {str(e)}")
+    except Exception as e:
+        logger.error(f"خطا در ذخیره فایل Base64 شده '{file_path}': {str(e)}")
 
     def save_configs(self, configs: List[Dict[str, str]]):
         """
