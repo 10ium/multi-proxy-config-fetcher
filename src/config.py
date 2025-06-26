@@ -57,7 +57,7 @@ class ChannelConfig:
         if not url or not isinstance(url, str):
             raise ValueError("URL نامعتبر است.")
         url = url.strip()
-        # **تغییر یافته**: اضافه کردن تمامی پیشوندهای پروتکل‌های پشتیبانی شده برای اعتبارسنجی اولیه URL
+        # اضافه کردن تمامی پیشوندهای پروتکل‌های پشتیبانی شده برای اعتبارسنجی اولیه URL
         valid_protocols_prefixes = (
             'http://', 'https://', 'ssconf://', 
             'ssr://', 'mieru://', 'snell://', 'anytls://', 'ssh://', 'juicity://',
@@ -136,13 +136,14 @@ class ProxyConfig:
 
     def _initialize_protocols(self) -> Dict:
         """
-        **تغییر یافته**: تعریف تمامی پروتکل‌های پراکسی پشتیبانی شده به همراه اولویت و نام‌های مستعار.
+        تعریف تمامی پروتکل‌های پراکسی پشتیبانی شده به همراه اولویت و نام‌های مستعار.
+        **خطای املایی 'ENABLEED_PROTOCOLS' به 'ENABLED_PROTOCOLS' اصلاح شد.**
         """
         return {
             "wireguard://": {"priority": 1, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("wireguard://", False)},
             "hysteria2://": {"priority": 2, "aliases": ["hy2://"], "enabled": ENABLED_PROTOCOLS.get("hysteria2://", False)},
             "vless://": {"priority": 2, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("vless://", False)},
-            "vmess://": {"priority": 1, "aliases": [], "enabled": ENABLEED_PROTOCOLS.get("vmess://", False)},
+            "vmess://": {"priority": 1, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("vmess://", False)}, # اصلاح شده
             "ss://": {"priority": 2, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("ss://", False)},
             "trojan://": {"priority": 2, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("trojan://", False)},
             "tuic://": {"priority": 1, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("tuic://", False)},
@@ -163,7 +164,7 @@ class ProxyConfig:
         self.CHANNEL_RETRY_LIMIT = min(10, max(1, 5))    # حداکثر تلاش مجدد برای یک کانال
         self.CHANNEL_ERROR_THRESHOLD = min(0.9, max(0.1, 0.7)) # آستانه خطا برای غیرفعال کردن کانال
         
-        # **تغییر یافته**: مسیرهای خروجی جدید برای سازماندهی بهتر فایل‌ها
+        # مسیرهای خروجی جدید برای سازماندهی بهتر فایل‌ها
         self.OUTPUT_DIR = 'subs'                          # پوشه اصلی برای تمامی خروجی‌ها
         self.TEXT_OUTPUT_DIR = os.path.join(self.OUTPUT_DIR, 'text') # پوشه برای فایل‌های متنی عادی
         self.BASE64_OUTPUT_DIR = os.path.join(self.OUTPUT_DIR, 'base64') # پوشه برای فایل‌های Base64 شده
