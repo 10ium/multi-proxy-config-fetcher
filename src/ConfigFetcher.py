@@ -10,18 +10,16 @@ from typing import List, Dict, Optional, Set, Tuple, Any
 from bs4 import BeautifulSoup
 import base64 
 
-import concurrent.futures # برای واکشی همزمان
-import threading # برای محافظت از منابع مشترک در حالت همزمان
+import concurrent.futures # هنوز import شده ولی در fetch_all_configs استفاده نمی‌شود
+import threading # هنوز import شده ولی استفاده از Lock در fetch_all_configs موقت حذف شده
 
 from config import ProxyConfig, ChannelConfig
 from config_validator import ConfigValidator
 from user_settings import SOURCE_URLS 
 
-# پیکربندی لاگ‌گیری (بهتر است از پیکربندی مرکزی در config.py استفاده شود یا آن را اینجا گسترش داد)
-# برای نمایش لاگ‌های DEBUG، سطح logging.basicConfig را به logging.DEBUG تغییر دهید.
-# در حالت پیش‌فرض (INFO)، این لاگ‌ها نمایش داده نمی‌شوند و خروجی تمیزتر است.
+# پیکربندی لاگ‌گیری (از config.py ارث می‌برد یا اینجا تنظیم می‌کند)
 logging.basicConfig(
-    level=logging.INFO, # سطح پیش‌فرض لاگ‌گیری: INFO. پیام‌های DEBUG نمایش داده نمی‌شوند.
+    level=logging.INFO, # سطح پیش‌فرض لاگ‌گیری: INFO. برای دیدن جزئیات بیشتر به logging.DEBUG تغییر دهید.
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('proxy_fetcher.log'), # لاگ در فایل
@@ -52,7 +50,7 @@ class ConfigFetcher:
         # کش برای ذخیره موقعیت جغرافیایی IPها برای افزایش سرعت و جلوگیری از محدودیت‌ها
         self.ip_location_cache: Dict[str, Tuple[str, str]] = {} 
 
-        # **جدید**: قفل برای محافظت از منابع مشترک در عملیات همزمان (مثل seen_configs و ip_location_cache)
+        # **جدید**: قفل برای محافظت از منابع مشترک (هنوز استفاده می‌شود)
         self._lock = threading.Lock() 
 
         # بازه‌های زمانی برای Smart Retry (تلاش مجدد هوشمند)
@@ -190,11 +188,12 @@ class ConfigFetcher:
                     return flag, country
                 
         except socket.gaierror:
-            # **تغییر یافته**: سطح لاگ از WARNING به DEBUG تغییر یافت تا خروجی شلوغ نشود.
+            # سطح لاگ از WARNING به DEBUG تغییر یافت تا خروجی شلوغ نشود.
             logger.debug(f"نام میزبان قابل حل نیست: '{address}'. موقعیت 'نامشخص' خواهد بود.") 
         except Exception as e:
             logger.error(f"خطای کلی در دریافت موقعیت برای '{address}': {str(e)}")
             
+        # ذخیره در کش حتی اگر ناموفق بود تا از تلاش‌های بعدی برای همین آدرس جلوگیری شود.
         with self._lock: # محافظت از کش در برابر دسترسی همزمان
             self.ip_location_cache[address] = ("🏳️", "Unknown") 
         return "🏳️", "Unknown"
@@ -659,6 +658,7 @@ class ConfigFetcher:
         """
         واکشی کانفیگ‌ها از تمام کانال‌های فعال و اعمال توازن پروتکل.
         کانال‌هایی که در حالت Smart Retry هستند، نادیده گرفته می‌شوند تا زمان بررسی بعدی‌شان فرا رسد.
+        **تغییر یافته**: بازگشت به واکشی غیرهمزمان برای عیب‌یابی.
         """
         all_configs: List[Dict[str, str]] = []
         
@@ -681,45 +681,35 @@ class ConfigFetcher:
             logger.info("هیچ کانال فعالی برای پردازش وجود ندارد (یا همه در حالت تلاش مجدد هوشمند هستند). فرآیند واکشی به پایان رسید.")
             return []
 
-        logger.info(f"شروع واکشی کانفیگ‌ها از {total_channels_to_process} کانال فعال به صورت همزمان...")
+        logger.info(f"شروع واکشی کانفیگ‌ها از {total_channels_to_process} کانال فعال به صورت غیرهمزمان (Sequential Fetching برای عیب‌یابی).")
         
-        # **تغییر یافته**: استفاده از ThreadPoolExecutor برای واکشی موازی
-        # حداکثر 10 تاپیک (Thread) برای واکشی همزمان (قابل تنظیم بر اساس منابع سرور/شبکه)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            # ارسال هر کانال به یک Thread برای واکشی
-            # executor.map به ترتیب لیست را برمی‌گرداند، حتی اگر وظایف به صورت نامرتب کامل شوند.
-            # channel_results یک لیست از لیست‌های Dict[str, str] خواهد بود.
-            futures = {executor.submit(self.fetch_configs_from_source, channel): channel for channel in channels_to_process}
+        # **تغییر یافته**: بازگشت به واکشی غیرهمزمان برای عیب‌یابی.
+        # برای بازگشت به واکشی همزمان، کد ThreadPoolExecutor را از نسخه قبلی استفاده کنید.
+        for i, channel in enumerate(channels_to_process, 1):
+            logger.info(f"پیشرفت: {(i / total_channels_to_process) * 100:.2f}% - در حال پردازش کانال '{channel.url}'")
+            try:
+                channel_configs_dicts = self.fetch_configs_from_source(channel)
+                all_configs.extend(channel_configs_dicts)
+            except Exception as exc:
+                logger.error(f"کانال '{channel.url}' در حین واکشی (غیرهمزمان) با خطا مواجه شد: {exc}", exc_info=True)
             
-            for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
-                channel = futures[future]
-                try:
-                    result_list = future.result()
-                    all_configs.extend(result_list)
-                    # **جدید**: نمایش درصد پیشرفت
-                    progress_percentage = (i / total_channels_to_process) * 100
-                    logger.info(f"پیشرفت: {progress_percentage:.2f}% - کانال '{channel.url}' پردازش شد. (کل کانفیگ‌های جمع‌آوری شده تاکنون: {len(all_configs)})")
-                except Exception as exc:
-                    logger.error(f"کانال '{channel.url}' در حین واکشی موازی با خطا مواجه شد: {exc}")
+            if i < total_channels_to_process:
+                logger.debug("مکث 2 ثانیه قبل از واکشی کانال بعدی...")
+                time.sleep(2) # مکث برای جلوگیری از مسدود شدن IP در حالت غیرهمزمان
 
         if all_configs:
             logger.info(f"واکشی از همه کانال‌ها تکمیل شد. مجموعاً {len(all_configs)} کانفیگ خام جمع‌آوری شد.")
-            # حذف تکراری‌ها از لیست کلی کانفیگ‌ها (بر اساس Canonical ID در process_config انجام می‌شود)
             
             # **تغییر یافته**: Unique کردن نهایی بر اساس شناسه کانونی در اینجا
             final_unique_configs_list = []
             seen_canonical_ids_for_final_list = set()
             for cfg_dict in all_configs:
-                # اطمینان حاصل کنید که canonical_id واقعاً در دیکشنری موجود است
                 canonical_id = cfg_dict.get('canonical_id') 
-                # این بررسی برای اطمینان بیشتر است، زیرا process_config باید آن را اضافه کرده باشد
                 if canonical_id and canonical_id not in seen_canonical_ids_for_final_list:
                     seen_canonical_ids_for_final_list.add(canonical_id)
                     final_unique_configs_list.append(cfg_dict)
-                # اگر canonical_id وجود نداشت یا None بود، آن را نادیده بگیرید (زیرا قبلا در process_config بررسی شده است)
 
             logger.info(f"پس از حذف تکراری‌های نهایی، {len(final_unique_configs_list)} کانفیگ منحصر به فرد باقی ماند.")
-            # مرتب سازی بر اساس رشته کانفیگ قبل از توازن برای اطمینان از خروجی ثابت
             all_configs = self.balance_protocols(sorted(final_unique_configs_list, key=lambda x: x['config']))
             logger.info(f"فرآیند واکشی و توازن کامل شد. {len(all_configs)} کانفیگ نهایی آماده ذخیره.")
             return all_configs
@@ -745,12 +735,10 @@ class ConfigFetcher:
         حالا کانفیگ‌ها شامل اطلاعات پرچم و کشور هستند.
         """
         logger.info("در حال آماده‌سازی دایرکتوری‌های خروجی برای ذخیره کانفیگ‌ها...")
-        # ایجاد پوشه‌های اصلی و فرعی برای خروجی‌های متنی و Base64
         os.makedirs(self.config.TEXT_OUTPUT_DIR, exist_ok=True)
         os.makedirs(self.config.BASE64_OUTPUT_DIR, exist_ok=True)
-        os.makedirs(self.config.SINGBOX_OUTPUT_DIR, exist_ok=True) # برای اطمینان که پوشه Singbox هم وجود دارد
+        os.makedirs(self.config.SINGBOX_OUTPUT_DIR, exist_ok=True)
 
-        # هدر اشتراک (Subscription Header) برای کلاینت‌های پراکسی
         header = """//profile-title: base64:8J+RvUFub255bW91cy3wnZWP
 //profile-update-interval: 1
 //subscription-userinfo: upload=0; download=0; total=10737418240000000; expire=2546249531
@@ -759,13 +747,11 @@ class ConfigFetcher:
 
 """
     
-        # ساخت محتوای متنی کامل با پرچم‌ها
         full_text_lines = []
         for cfg_dict in configs:
             full_text_lines.append(f"{cfg_dict['flag']} {cfg_dict['country']} {cfg_dict['config']}")
-        full_text_content = header + '\n\n'.join(full_text_lines) + '\n' # اضافه کردن خط جدید در انتها
+        full_text_content = header + '\n\n'.join(full_text_lines) + '\n'
 
-        # --- 1. ذخیره فایل کامل (متنی) در subs/text/proxy_configs.txt ---
         full_file_path = os.path.join(self.config.TEXT_OUTPUT_DIR, 'proxy_configs.txt')
         try:
             with open(full_file_path, 'w', encoding='utf-8') as f:
@@ -774,15 +760,12 @@ class ConfigFetcher:
         except Exception as e:
             logger.error(f"خطا در ذخیره فایل کامل کانفیگ: {str(e)}")
 
-        # --- 2. ذخیره فایل کامل (Base64) در subs/base64/proxy_configs_base64.txt ---
         base64_full_file_path = os.path.join(self.config.BASE64_OUTPUT_DIR, "proxy_configs_base64.txt")
         self._save_base64_file(base64_full_file_path, full_text_content)
 
-        # --- 3. تفکیک و ذخیره بر اساس پروتکل ---
         protocol_configs_separated: Dict[str, List[Dict[str, str]]] = {p: [] for p in self.config.SUPPORTED_PROTOCOLS}
         for cfg_dict in configs:
             protocol_full_name = cfg_dict['protocol']
-            # مطمئن شوید که پروتکل اصلی (نه alias) برای دسته‌بندی استفاده می‌شود
             if protocol_full_name.startswith('hy2://'):
                 protocol_full_name = 'hysteria2://'
             elif protocol_full_name.startswith('hy1://'):
@@ -793,21 +776,16 @@ class ConfigFetcher:
             else:
                 logger.warning(f"پروتکل '{protocol_full_name}' در لیست پروتکل‌های پشتیبانی شده برای تفکیک یافت نشد.")
 
-
         for protocol_full_name, cfg_list_of_dicts in protocol_configs_separated.items():
             if not cfg_list_of_dicts:
                 continue
 
-            # حذف "://" از نام پروتکل برای نام فایل
             protocol_name = protocol_full_name.replace('://', '')
-            
-            # ساخت محتوای متنی برای پروتکل خاص با پرچم‌ها
             protocol_text_lines = []
             for cfg_dict in cfg_list_of_dicts:
                  protocol_text_lines.append(f"{cfg_dict['flag']} {cfg_dict['country']} {cfg_dict['config']}")
             protocol_text_content = header + '\n\n'.join(protocol_text_lines) + '\n'
 
-            # --- 3a. ذخیره فایل متنی پروتکل خاص در subs/text/ ---
             protocol_file_name = f"{protocol_name}.txt"
             protocol_file_path = os.path.join(self.config.TEXT_OUTPUT_DIR, protocol_file_name)
             try:
@@ -817,7 +795,6 @@ class ConfigFetcher:
             except Exception as e:
                 logger.error(f"خطا در ذخیره فایل '{protocol_name}' کانفیگ: {str(e)}")
 
-            # --- 3b. ذخیره فایل Base64 شده پروتکل خاص در subs/base64/ ---
             base64_protocol_file_name = f"{protocol_name}_base64.txt"
             base64_protocol_file_path = os.path.join(self.config.BASE64_OUTPUT_DIR, base64_protocol_file_name)
             self._save_base64_file(base64_protocol_file_path, protocol_text_content)
@@ -833,7 +810,7 @@ class ConfigFetcher:
                 'channels': []
             }
             
-            for channel in self.config.SOURCE_URLS: # حالا شامل کانال‌های جدید اضافه شده هم می‌شود
+            for channel in self.config.SOURCE_URLS:
                 channel_stats = {
                     'url': channel.url,
                     'enabled': channel.enabled,
@@ -887,9 +864,6 @@ class ConfigFetcher:
         
         for channel in channels_for_report:
             normalized_url = self.config._normalize_url(channel.url)
-            # یک کانال "جدید کشف شده" است اگر:
-            # 1. در user_settings.py اولیه نبوده باشد.
-            # 2. در channel_stats.json قبلی هم نبوده باشد.
             is_newly_discovered_current_run = normalized_url not in self.initial_user_settings_urls and \
                                              normalized_url not in self.previous_stats_urls
             
@@ -952,13 +926,13 @@ def main():
     """
     try:
         logger.info("شروع فرآیند واکشی و پردازش کانفیگ‌ها...")
-        config = ProxyConfig() # مقداردهی اولیه تنظیمات کلی
-        fetcher = ConfigFetcher(config) # ایجاد نمونه از واکشی‌کننده کانفیگ
+        config = ProxyConfig() 
+        fetcher = ConfigFetcher(config) 
         
-        configs = fetcher.fetch_all_configs() # واکشی و پردازش تمامی کانفیگ‌ها
+        configs = fetcher.fetch_all_configs()
         
         if configs:
-            fetcher.save_configs(configs) # فراخوانی save_configs به عنوان متد
+            fetcher.save_configs(configs)
             logger.info(f"فرآیند با موفقیت در {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')} به پایان رسید. مجموعاً {len(configs)} کانفیگ پردازش شد.")
             
             logger.info("تعداد کانفیگ‌ها بر اساس پروتکل:")
@@ -967,14 +941,13 @@ def main():
         else:
             logger.error("هیچ کانفیگ معتبری یافت نشد و هیچ فایلی تولید نشد!")
             
-        fetcher.save_channel_stats() # فراخوانی save_channel_stats به عنوان متد
+        fetcher.save_channel_stats()
         logger.info("آمار کانال‌ها ذخیره شد.")
 
-        fetcher.generate_channel_status_report() # فراخوانی generate_channel_status_report به عنوان متد
+        fetcher.generate_channel_status_report()
             
     except Exception as e:
-        logger.critical(f"خطای بحرانی در اجرای اصلی: {str(e)}", exc_info=True) # exc_info=True برای نمایش traceback
+        logger.critical(f"خطای بحرانی در اجرای اصلی: {str(e)}", exc_info=True)
 
 if __name__ == '__main__':
     main()
-
