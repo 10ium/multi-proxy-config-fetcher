@@ -690,25 +690,28 @@ class ConfigFetcher:
             # ارسال هر کانال به یک Thread برای واکشی
             # executor.map به ترتیب لیست را برمی‌گرداند، حتی اگر وظایف به صورت نامرتب کامل شوند.
             # channel_results یک لیست از لیست‌های Dict[str, str] خواهد بود.
-            channel_results = list(executor.map(self.fetch_configs_from_source, channels_to_process))
-
-        # **تغییر یافته**: ترکیب نتایج از همه Threadها
-        for result_list in channel_results:
-            all_configs.extend(result_list)
-
+            futures = {executor.submit(self.fetch_configs_from_source, channel): channel for channel in channels_to_process}
+            
+            for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
+                channel = futures[future]
+                try:
+                    result_list = future.result()
+                    all_configs.extend(result_list)
+                    # **جدید**: نمایش درصد پیشرفت
+                    progress_percentage = (i / total_channels_to_process) * 100
+                    logger.info(f"پیشرفت: {progress_percentage:.2f}% - کانال '{channel.url}' پردازش شد. (کل کانفیگ‌های جمع‌آوری شده تاکنون: {len(all_configs)})")
+                except Exception as exc:
+                    logger.error(f"کانال '{channel.url}' در حین واکشی موازی با خطا مواجه شد: {exc}")
 
         if all_configs:
             logger.info(f"واکشی از همه کانال‌ها تکمیل شد. مجموعاً {len(all_configs)} کانفیگ خام جمع‌آوری شد.")
             # حذف تکراری‌ها از لیست کلی کانفیگ‌ها (بر اساس Canonical ID در process_config انجام می‌شود)
-            # اما برای اطمینان نهایی و مرتب‌سازی قبل از توازن، می‌توان یکبار دیگر unique کردن را انجام داد.
             
             # **تغییر یافته**: Unique کردن نهایی بر اساس شناسه کانونی در اینجا
             final_unique_configs_list = []
             seen_canonical_ids_for_final_list = set()
             for cfg_dict in all_configs:
-                # اطمینان حاصل کنید که canonical_id واقعاً در دیکشنری موجود است
                 canonical_id = cfg_dict.get('canonical_id') 
-                # این بررسی برای اطمینان بیشتر است، زیرا process_config باید آن را اضافه کرده باشد
                 if canonical_id and canonical_id not in seen_canonical_ids_for_final_list:
                     seen_canonical_ids_for_final_list.add(canonical_id)
                     final_unique_configs_list.append(cfg_dict)
