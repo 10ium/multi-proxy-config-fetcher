@@ -278,17 +278,6 @@ class ConfigValidator:
         protocols = ['vmess://', 'vless://', 'ss://', 'trojan://', 'hysteria2://', 'hy2://', 'wireguard://', 'tuic://', 'ssconf://',
                      'ssr://', 'mieru://', 'snell://', 'anytls://', 'ssh://', 'juicity://',
                      'hysteria://', 'warp://']
-        # regex برای پیدا کردن شروع هر کانفیگ (پروتکل و سپس کاراکترهای مجاز URL-safe)
-        # این regex سعی می‌کند یک خط کامل کانفیگ را تا کاراکترهای خاصی (فضای خالی، خط جدید، یا شروع پروتکل بعدی) بگیرد
-        # ^(?:vmess|vless|ss|trojan|hysteria2|hy2|wireguard|tuic|ssconf|ssr|mieru|snell|anytls|ssh|juicity|hysteria|warp):\/\/[^\s\n]+
-        # این regex بیش از حد تهاجمی است و ممکن است باعث از دست رفتن کانفیگ‌ها شود.
-        # بهتر است ابتدا خطوط را بررسی کنیم و سپس روی هر خط یا بلوک، شروع پروتکل را پیدا کنیم.
-
-        # این منطق split_configs در ConnectionValidator قبلی بود و تا حد زیادی صحیح است،
-        # اما نیاز به اصلاح برای بهبود دقت جداسازی دارد.
-        # این تابع به طور کلی سعی می‌کند هر پروتکلی را در هر جایی از متن پیدا کند.
-        # ما آن را کمی بهینه‌تر می‌کنیم.
-        
         # یک regex برای یافتن هر پروتکل در متن
         protocol_pattern = '|'.join(re.escape(p) for p in protocols)
         # یافتن همه تطابق‌ها به همراه موقعیت شروع آنها
