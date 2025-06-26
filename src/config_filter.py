@@ -1,6 +1,8 @@
 import logging
 import re
+import socket # برای حل کردن دامنه به IP
 from typing import List, Dict, Any, Optional, Union
+from urllib.parse import urlparse
 
 # وابستگی‌های مورد نیاز
 from config import ProxyConfig # برای دسترسی به تنظیمات کلی
@@ -38,17 +40,29 @@ class ConfigFilter:
         فعلا برای IPهای دقیق یا CIDRهای ساده‌تر پیاده‌سازی می‌شود.
         """
         try:
-            # فعلا فقط برای IPهای دقیق یا CIDRهای /24 (برای سادگی)
+            # اگر کتابخانه ipaddress در دسترس باشد، بهتر است از آن استفاده کنید.
+            # import ipaddress
+            # return ipaddress.ip_address(ip_address) in ipaddress.ip_network(ip_range)
+
+            # پیاده‌سازی ساده برای IPهای دقیق و CIDR های /24
             if '/' in ip_range:
-                # این یک پیاده‌سازی بسیار ابتدایی برای CIDR است، برای تولید واقعی نیاز به ماژول ipaddress دارید
-                range_ip, cidr_prefix = ip_range.split('/')
-                if int(cidr_prefix) == 24: # مثلا فقط برای /24
+                range_ip, cidr_prefix_str = ip_range.split('/')
+                cidr_prefix = int(cidr_prefix_str)
+                
+                # برای سادگی فعلا فقط /24 و /16 را هندل می‌کنیم،
+                # برای CIDR کامل نیاز به تبدیل به باینری یا استفاده از ipaddress است.
+                if cidr_prefix == 24: # مثلاً 192.168.1.0/24
                     return ip_address.startswith(range_ip.rsplit('.', 1)[0] + '.')
+                elif cidr_prefix == 16: # مثلاً 192.168.0.0/16
+                    return ip_address.startswith(range_ip.rsplit('.', 2)[0] + '.')
                 else:
-                    logger.warning(f"CIDR '{ip_range}' پشتیبانی نمی‌شود. فقط IP دقیق یا /24.")
+                    logger.warning(f"CIDR '{ip_range}' پشتیبانی نمی‌شود. فقط IP دقیق، /16 و /24 در پیاده‌سازی فعلی.")
                     return False
-            else:
+            else: # IP دقیق
                 return ip_address == ip_range
+        except ValueError: # اگر IP نامعتبر باشد
+            logger.warning(f"فرمت IP یا CIDR نامعتبر برای فیلتر: '{ip_range}'")
+            return False
         except Exception as e:
             logger.warning(f"خطا در بررسی IP در رنج '{ip_range}' برای IP '{ip_address}': {e}")
             return False
@@ -77,19 +91,20 @@ class ConfigFilter:
         filtered_list: List[Dict[str, str]] = []
         
         # پیش‌پردازش لیست‌ها برای جستجوی کارآمدتر
-        allowed_countries_lower = {c.lower() for c in allowed_countries} if allowed_countries else set()
-        blocked_countries_lower = {c.lower() for c in blocked_countries} if blocked_countries else set()
-        allowed_protocols_lower = {p.lower() for p in allowed_protocols} if allowed_protocols else set()
-        blocked_keywords_lower = {k.lower() for k in blocked_keywords} if blocked_keywords else set()
-        blocked_ips_set = set(blocked_ips) if blocked_ips else set()
-        blocked_domains_set = {d.lower() for d in blocked_domains} if blocked_domains else set()
+        allowed_countries_lower = {c.lower() for c in (allowed_countries or [])}
+        blocked_countries_lower = {c.lower() for c in (blocked_countries or [])}
+        allowed_protocols_lower = {p.lower() for p in (allowed_protocols or [])}
+        blocked_keywords_lower = {k.lower() for k in (blocked_keywords or [])}
+        blocked_ips_set = set(blocked_ips or [])
+        blocked_domains_set = {d.lower() for d in (blocked_domains or [])}
 
         logger.info(f"شروع فیلترینگ {len(configs)} کانفیگ با معیارهای مشخص شده...")
 
         for cfg_dict in configs:
             config_string = cfg_dict['config']
             protocol = cfg_dict['protocol']
-            country_code = cfg_dict['flag'].strip('🇦🇧🇨🇩🇪🇫🇬🇭🇮🇯🇰🇱🇲🇳🇴🇵🇶🇷🇸🇹🇺🇻🇼🇽🇾🇿').lower() # تبدیل پرچم به کد کشور
+            # استخراج کد کشور از پرچم (مثل 🇺🇸 -> us)
+            country_code = cfg_dict['flag'].strip('🇦🇧🇨🇩🇪🇫🇬🇭🇮🇯🇰🇱🇲🇳🇴🇵🇶🇷🇸🇹🇺🇻🇼🇽🇾🇿').lower() 
             server_address = self.validator.get_server_address(config_string, protocol)
             
             # --- قوانین مسدودسازی (Blocklist) ---
@@ -99,7 +114,6 @@ class ConfigFilter:
                 continue
 
             # 2. مسدودسازی بر اساس کلمه کلیدی در کانفیگ یا Canonical ID
-            # جستجو در کل رشته کانفیگ و canonical_id (اگر موجود باشد)
             text_to_search = config_string
             if 'canonical_id' in cfg_dict:
                 text_to_search += " " + cfg_dict['canonical_id'] # برای جستجو در canonical_id
@@ -110,14 +124,14 @@ class ConfigFilter:
             
             # 3. مسدودسازی بر اساس IP یا دامنه
             if server_address:
-                # سعی می‌کنیم IP واقعی را بگیریم
+                resolved_ip = None
                 try:
-                    resolved_ip = socket.gethostbyname(server_address)
+                    resolved_ip = socket.gethostbyname(server_address) # تلاش برای حل دامنه به IP
                 except socket.gaierror:
-                    resolved_ip = server_address # اگر حل نشد، خودش را در نظر بگیر
+                    resolved_ip = server_address # اگر حل نشد، خودش را در نظر بگیر (ممکن است IP باشد)
 
                 # بررسی IP در لیست سیاه
-                if blocked_ips_set:
+                if blocked_ips_set and resolved_ip:
                     is_blocked_ip = False
                     for bl_ip in blocked_ips_set:
                         if self._is_ip_in_range(resolved_ip, bl_ip):
@@ -140,6 +154,7 @@ class ConfigFilter:
                 continue
 
             # 2. مجازسازی بر اساس پروتکل (اگر allowed_protocols مشخص شده باشد، فقط آن پروتکل‌ها مجازند)
+            # توجه: protocol در اینجا فرمت کامل "vless://" را دارد.
             if allowed_protocols_lower and protocol.lower() not in allowed_protocols_lower:
                 logger.debug(f"کانفیگ به دلیل عدم وجود در پروتکل‌های مجاز رد شد: {config_string[:50]}...")
                 continue
