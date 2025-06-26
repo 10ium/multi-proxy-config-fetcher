@@ -2,107 +2,42 @@ import json
 import base64
 import uuid
 import time
-import socket
+import socket 
 import requests
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
 from urllib.parse import urlparse, parse_qs
+import os
+import re 
+import logging 
+
+# پیکربندی لاگ‌گیری
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class ConfigToSingbox:
+    """
+    کلاس ConfigToSingbox مسئول تبدیل کانفیگ‌های پراکسی به فرمت قابل استفاده برای Singbox است.
+    """
     def __init__(self):
-        self.output_file = 'configs/singbox_configs.json'
+        # مسیرهای خروجی برای فایل‌های Singbox
+        self.output_dir = os.path.join('subs', 'singbox')
+        self.output_file = os.path.join(self.output_dir, 'singbox_configs.json')
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         
-    def get_location_from_ip_api(self, ip: str) -> Tuple[str, str]:
-        try:
-            response = requests.get(f'http://ip-api.com/json/{ip}', headers=self.headers, timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('status') == 'success' and data.get('countryCode'):
-                    return data['countryCode'].lower(), data['country']
-        except Exception:
-            pass
-        return '', ''
-
-    def get_location_from_ipapi_co(self, ip: str) -> Tuple[str, str]:
-        try:
-            response = requests.get(f'https://ipapi.co/{ip}/json/', headers=self.headers, timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('country_code') and data.get('country_name'):
-                    return data['country_code'].lower(), data['country_name']
-        except Exception:
-            pass
-        return '', ''
-
-    def get_location_from_ipwhois(self, ip: str) -> Tuple[str, str]:
-        try:
-            response = requests.get(f'https://ipwhois.app/json/{ip}', headers=self.headers, timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('country_code') and data.get('country'):
-                    return data['country_code'].lower(), data['country']
-        except Exception:
-            pass
-        return '', ''
-
-    def get_location_from_ipdata(self, ip: str) -> Tuple[str, str]:
-        try:
-            response = requests.get(f'https://api.ipdata.co/{ip}?api-key=test', headers=self.headers, timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('country_code') and data.get('country_name'):
-                    return data['country_code'].lower(), data['country_name']
-        except Exception:
-            pass
-        return '', ''
-
-    def get_location_from_abstractapi(self, ip: str) -> Tuple[str, str]:
-        try:
-            response = requests.get(f'https://ipgeolocation.abstractapi.com/v1/?api_key=test&ip_address={ip}', 
-                                  headers=self.headers, timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('country_code') and data.get('country'):
-                    return data['country_code'].lower(), data['country']
-        except Exception:
-            pass
-        return '', ''
-
-    def get_location(self, address: str) -> tuple:
-        try:
-            ip = socket.gethostbyname(address)
-            apis = [
-                self.get_location_from_ip_api,
-                self.get_location_from_ipapi_co,
-                self.get_location_from_ipwhois,
-                self.get_location_from_ipdata,
-                self.get_location_from_abstractapi
-            ]
-            
-            for api_func in apis:
-                country_code, country = api_func(ip)
-                if country_code and country and len(country_code) == 2:
-                    flag = ''.join(chr(ord('🇦') + ord(c.upper()) - ord('A')) for c in country_code)
-                    time.sleep(1)
-                    return flag, country
-                time.sleep(1)
-                
-        except Exception:
-            pass
-            
-        return "🏳️", "Unknown"
-
     def decode_vmess(self, config: str) -> Optional[Dict]:
+        """رمزگشایی کانفیگ VMess."""
         try:
             encoded = config.replace('vmess://', '')
             decoded = base64.b64decode(encoded).decode('utf-8')
             return json.loads(decoded)
-        except Exception:
+        except Exception as e:
+            logger.debug(f"خطا در دیکد کردن VMess: {str(e)}")
             return None
 
     def parse_vless(self, config: str) -> Optional[Dict]:
+        """تجزیه کانفیگ Vless."""
         try:
             url = urlparse(config)
             if url.scheme.lower() != 'vless' or not url.hostname:
@@ -120,10 +55,12 @@ class ConfigToSingbox:
                 'path': params.get('path', [''])[0],
                 'host': params.get('host', [''])[0]
             }
-        except Exception:
+        except Exception as e:
+            logger.debug(f"خطا در تجزیه Vless: {str(e)}")
             return None
 
     def parse_trojan(self, config: str) -> Optional[Dict]:
+        """تجزیه کانفیگ Trojan."""
         try:
             url = urlparse(config)
             if url.scheme.lower() != 'trojan' or not url.hostname:
@@ -139,10 +76,12 @@ class ConfigToSingbox:
                 'type': params.get('type', ['tcp'])[0],
                 'path': params.get('path', [''])[0]
             }
-        except Exception:
+        except Exception as e:
+            logger.debug(f"خطا در تجزیه Trojan: {str(e)}")
             return None
 
     def parse_hysteria2(self, config: str) -> Optional[Dict]:
+        """تجزیه کانفیگ Hysteria2."""
         try:
             url = urlparse(config)
             if url.scheme.lower() not in ['hysteria2', 'hy2'] or not url.hostname or not url.port:
@@ -154,10 +93,12 @@ class ConfigToSingbox:
                 'password': url.username or query.get('password', ''),
                 'sni': query.get('sni', url.hostname)
             }
-        except Exception:
+        except Exception as e:
+            logger.debug(f"خطا در تجزیه Hysteria2: {str(e)}")
             return None
 
     def parse_shadowsocks(self, config: str) -> Optional[Dict]:
+        """تجزیه کانفیگ Shadowsocks."""
         try:
             parts = config.replace('ss://', '').split('@')
             if len(parts) != 2:
@@ -172,12 +113,30 @@ class ConfigToSingbox:
                 'address': host,
                 'port': int(port)
             }
-        except Exception:
+        except Exception as e:
+            logger.debug(f"خطا در تجزیه Shadowsocks: {str(e)}")
             return None
-
-    def convert_to_singbox(self, config: str) -> Optional[Dict]:
+            
+    def convert_to_singbox(self, config_line_with_flag: str) -> Optional[Dict]:
+        """
+        تبدیل یک خط کانفیگ کامل (شامل پرچم و کشور) به فرمت خروجی Singbox.
+        فقط پروتکل‌های خاصی را تبدیل می‌کند (VMess, Vless, Trojan, Hysteria2, Shadowsocks).
+        """
         try:
+            # جداسازی پرچم، کشور و کانفیگ اصلی از خط ورودی
+            parts = config_line_with_flag.strip().split(' ', 2)
+            if len(parts) < 3: 
+                flag = "🏳️"
+                country = "Unknown"
+                config = config_line_with_flag
+            else:
+                flag = parts[0]
+                country = parts[1]
+                config = parts[2] # این کانفیگ واقعی است (vmess://..., vless://..., etc.)
+                
             config_lower = config.lower()
+
+            # منطق تبدیل برای پروتکل‌های پشتیبانی شده توسط Singbox
             if config_lower.startswith('vmess://'):
                 vmess_data = self.decode_vmess(config)
                 if not vmess_data or not vmess_data.get('add') or not vmess_data.get('port') or not vmess_data.get('id'):
@@ -189,10 +148,10 @@ class ConfigToSingbox:
                     if vmess_data.get('host', ''):
                         transport["headers"] = {"Host": vmess_data.get('host')}
                     transport["type"] = vmess_data.get('net', 'tcp')
-                flag, country = self.get_location(vmess_data['add'])
+                
                 return {
                     "type": "vmess",
-                    "tag": f"{flag} vmess-{str(uuid.uuid4())[:8]} ({country})",
+                    "tag": f"{flag} {vmess_data.get('ps', '') or 'vmess'}-{str(uuid.uuid4())[:8]} ({country})",
                     "server": vmess_data['add'],
                     "server_port": int(vmess_data['port']),
                     "uuid": vmess_data['id'],
@@ -201,7 +160,7 @@ class ConfigToSingbox:
                     "transport": transport,
                     "tls": {
                         "enabled": vmess_data.get('tls') == 'tls',
-                        "insecure": True,
+                        "insecure": True, # معمولا insecure=true برای دور زدن مشکلات گواهی
                         "server_name": vmess_data.get('sni', vmess_data['add'])
                     }
                 }
@@ -216,7 +175,7 @@ class ConfigToSingbox:
                     if vless_data.get('host', ''):
                         transport["headers"] = {"Host": vless_data.get('host')}
                     transport["type"] = "ws"
-                flag, country = self.get_location(vless_data['address'])
+                
                 return {
                     "type": "vless",
                     "tag": f"{flag} vless-{str(uuid.uuid4())[:8]} ({country})",
@@ -239,7 +198,7 @@ class ConfigToSingbox:
                 if trojan_data['type'] != 'tcp' and trojan_data.get('path', ''):
                     transport["path"] = trojan_data.get('path')
                     transport["type"] = trojan_data['type']
-                flag, country = self.get_location(trojan_data['address'])
+                
                 return {
                     "type": "trojan",
                     "tag": f"{flag} trojan-{str(uuid.uuid4())[:8]} ({country})",
@@ -258,7 +217,7 @@ class ConfigToSingbox:
                 hy2_data = self.parse_hysteria2(config)
                 if not hy2_data or not hy2_data.get('address') or not hy2_data.get('port'):
                     return None
-                flag, country = self.get_location(hy2_data['address'])
+                
                 return {
                     "type": "hysteria2",
                     "tag": f"{flag} hysteria2-{str(uuid.uuid4())[:8]} ({country})",
@@ -275,7 +234,7 @@ class ConfigToSingbox:
                 ss_data = self.parse_shadowsocks(config)
                 if not ss_data or not ss_data.get('address') or not ss_data.get('port'):
                     return None
-                flag, country = self.get_location(ss_data['address'])
+                
                 return {
                     "type": "shadowsocks",
                     "tag": f"{flag} ss-{str(uuid.uuid4())[:8]} ({country})",
@@ -284,26 +243,47 @@ class ConfigToSingbox:
                     "method": ss_data['method'],
                     "password": ss_data['password']
                 }
-            return None
-        except Exception:
+            # --- پروتکل‌های جدید در اینجا تبدیل نمی‌شوند ---
+            else:
+                logger.warning(f"پروتکل '{config_lower.split('://')[0]}' برای تبدیل به Singbox پشتیبانی نمی‌شود. کانفیگ نادیده گرفته شد: '{config_line_with_flag[:min(len(config_line_with_flag), 100)]}...'")
+                return None
+        except Exception as e:
+            logger.error(f"خطا در تبدیل کانفیگ به Singbox: '{config_line_with_flag[:min(len(config_line_with_flag), 100)]}...' - {str(e)}")
             return None
 
     def process_configs(self):
+        """
+        کانفیگ‌ها را از فایل متنی می‌خواند، تبدیل می‌کند و کانفیگ‌های Singbox را در فایل خروجی ذخیره می‌کند.
+        """
         try:
-            with open('configs/proxy_configs.txt', 'r') as f:
-                configs = f.read().strip().split('\n')
+            # مسیر فایل متنی که توسط ConfigFetcher تولید می‌شود.
+            config_file_path = os.path.join('subs', 'text', 'proxy_configs.txt')
+            if not os.path.exists(config_file_path):
+                logger.error(f"خطا: فایل کانفیگ '{config_file_path}' یافت نشد. لطفا ابتدا ConfigFetcher را اجرا کنید.")
+                return
+
+            with open(config_file_path, 'r', encoding='utf-8') as f:
+                # خطوطی که با // شروع می‌شوند یا خالی هستند را نادیده بگیرید (هدر و خطوط خالی).
+                configs_with_flags = [line.strip() for line in f if line.strip() and not line.strip().startswith('//')]
+            
             outbounds = []
             valid_tags = []
-            for config in configs:
-                config = config.strip()
-                if not config or config.startswith('//'):
-                    continue
-                converted = self.convert_to_singbox(config)
+            logger.info(f"در حال تبدیل {len(configs_with_flags)} کانفیگ به فرمت Singbox...")
+            for config_line_with_flag in configs_with_flags:
+                converted = self.convert_to_singbox(config_line_with_flag)
                 if converted:
                     outbounds.append(converted)
                     valid_tags.append(converted['tag'])
+            
             if not outbounds:
+                logger.warning("هیچ کانفیگ معتبری برای تبدیل به Singbox یافت نشد.")
+                # اطمینان از وجود پوشه خروجی و ایجاد فایل JSON خالی
+                os.makedirs(self.output_dir, exist_ok=True)
+                with open(self.output_file, 'w', encoding='utf-8') as f:
+                    f.write("{}") # فایل JSON خالی
                 return
+            
+            # پیکربندی بخش DNS برای Singbox
             dns_config = {
                 "dns": {
                     "final": "local-dns",
@@ -321,15 +301,18 @@ class ConfigToSingbox:
                     "strategy": "prefer_ipv4"
                 }
             }
+            # پیکربندی بخش Inbounds (ورودی‌ها) برای Singbox
             inbounds_config = [
                 {"address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"], "auto_route": True, "endpoint_independent_nat": False, "mtu": 9000, "platform": {"http_proxy": {"enabled": True, "server": "127.0.0.1", "server_port": 2080}}, "sniff": True, "stack": "system", "strict_route": False, "type": "tun"},
                 {"listen": "127.0.0.1", "listen_port": 2080, "sniff": True, "type": "mixed", "users": []}
             ]
+            # پیکربندی بخش Outbounds (خروجی‌ها) برای Singbox
             outbounds_config = [
                 {"tag": "proxy", "type": "selector", "outbounds": ["auto"] + valid_tags + ["direct"]},
                 {"tag": "auto", "type": "urltest", "outbounds": valid_tags, "url": "http://www.gstatic.com/generate_204", "interval": "10m", "tolerance": 50},
                 {"tag": "direct", "type": "direct"}
             ] + outbounds
+            # پیکربندی بخش Route (مسیریابی) برای Singbox
             route_config = {
                 "auto_detect_interface": True,
                 "final": "proxy",
@@ -339,11 +322,17 @@ class ConfigToSingbox:
                     {"protocol": "dns", "action": "hijack-dns"}
                 ]
             }
+            # ترکیب همه بخش‌ها در یک پیکربندی Singbox کامل JSON
             singbox_config = {**dns_config, "inbounds": inbounds_config, "outbounds": outbounds_config, "route": route_config}
-            with open(self.output_file, 'w') as f:
+            
+            # ایجاد پوشه خروجی اگر وجود نداشت و ذخیره فایل
+            os.makedirs(self.output_dir, exist_ok=True)
+            with open(self.output_file, 'w', encoding='utf-8') as f:
                 json.dump(singbox_config, f, indent=2, ensure_ascii=False)
+            logger.info(f"با موفقیت {len(outbounds)} کانفیگ Singbox در '{self.output_file}' ذخیره شد.")
+
         except Exception as e:
-            print(f"Error processing configs: {str(e)}")
+            logger.critical(f"خطا در پردازش کانفیگ‌ها برای Singbox: {str(e)}", exc_info=True) # نمایش traceback برای خطاهای بحرانی
 
 def main():
     converter = ConfigToSingbox()
@@ -351,3 +340,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
