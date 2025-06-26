@@ -6,7 +6,7 @@
 SOURCE_URLS = [
     "https://raw.githubusercontent.com/4n0nymou3/wg-config-fetcher/refs/heads/main/configs/wireguard_configs.txt",
     "https://raw.githubusercontent.com/4n0nymou3/ss-config-updater/refs/heads/main/configs.txt",
- "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mci/sub_1.txt",
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mci/sub_1.txt",
     "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mci/sub_2.txt",
     "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mci/sub_3.txt",
     "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mci/sub_4.txt",
@@ -155,7 +155,7 @@ SOURCE_URLS = [
     "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/juicity",
     "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/tuic",
     "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/reality",
-     "https://raw.githubusercontent.com/huibq/trojanlinks/refs/heads/master/links/ssr",
+    "https://raw.githubusercontent.com/huibq/trojanlinks/refs/heads/master/links/ssr",
     "https://raw.githubusercontent.com/hiddify/hiddify-next/refs/heads/main/test.configs/warp",
     "https://raw.githubusercontent.com/ircfspace/warpsub/refs/heads/main/export/warp",
 
@@ -198,14 +198,14 @@ ENABLED_PROTOCOLS = {
     "ss://": True,
     "trojan://": True,
     "tuic://": True,
-    "ssr://": True,       # ShadowsocksR
-    "mieru://": True,     # Mieru
-    "snell://": True,     # Snell
-    "anytls://": True,    # Anytls
-    "ssh://": True,       # SSH
-    "juicity://": True,   # Juicity
-    "hysteria://": True,  # Hysteria 1 (شامل hy1:// هم می‌شود)
-    "warp://": True       # Cloudflare WARP
+    "ssr://": True,         # ShadowsocksR
+    "mieru://": True,       # Mieru
+    "snell://": True,       # Snell
+    "anytls://": True,      # Anytls
+    "ssh://": True,         # SSH
+    "juicity://": True,     # Juicity
+    "hysteria://": True,    # Hysteria 1 (شامل hy1:// هم می‌شود)
+    "warp://": True         # Cloudflare WARP
 }
 
 # حداکثر عمر کانفیگ‌ها بر حسب روز.
@@ -213,33 +213,32 @@ ENABLED_PROTOCOLS = {
 MAX_CONFIG_AGE_DAYS = 2
 
 
-
 # --- تنظیمات فیلترینگ پیشرفته (مرحله 4) ---
 
+# **تغییر یافته**: از 'list' به جای 'List' استفاده شده است.
 # لیست کدهای کشور (ISO 3166-1 alpha-2، lowercase) که مجاز هستند.
 # اگر خالی باشد، همه کشورها مجازند مگر اینکه در BLOCKED_COUNTRIES باشند.
 # مثال: ALLOWED_COUNTRIES = ["ir", "us", "de"]
-ALLOWED_COUNTRIES: List[str] = []
+ALLOWED_COUNTRIES: list[str] = [] # <--- اینجا تغییر کرد
 
 # لیست کدهای کشور (ISO 3166-1 alpha-2، lowercase) که مسدود هستند.
 # مثال: BLOCKED_COUNTRIES = ["cn", "ru"]
-BLOCKED_COUNTRIES: List[str] = []
+BLOCKED_COUNTRIES: list[str] = [] # <--- اینجا تغییر کرد
 
 # لیست پروتکل‌هایی (با '://') که مجاز هستند. اگر خالی باشد، همه پروتکل‌های فعال مجازند.
 # مثال: ALLOWED_PROTOCOLS = ["vless://", "trojan://"]
-ALLOWED_PROTOCOLS: List[str] = []
+ALLOWED_PROTOCOLS: list[str] = [] # <--- اینجا تغییر کرد
 
 # لیستی از کلمات کلیدی (case-insensitive) که اگر در کانفیگ یا شناسه کانونی آن باشند، مسدود می‌شوند.
 # مثال: BLOCKED_KEYWORDS = ["mtproto", "iran", "test", "demo"]
-BLOCKED_KEYWORDS: List[str] = []
+BLOCKED_KEYWORDS: list[str] = [] # <--- اینجا تغییر کرد
 
 # لیستی از آدرس‌های IP یا رنج‌های CIDR (مثال: "192.168.1.1" یا "10.0.0.0/24") که مسدود هستند.
 # فعلا پشتیبانی CIDR محدود است (فقط برای /24).
 # مثال: BLOCKED_IPS = ["1.2.3.4", "5.6.0.0/24"]
-BLOCKED_IPS: List[str] = []
+BLOCKED_IPS: list[str] = [] # <--- اینجا تغییر کرد
 
 # لیستی از دامنه‌ها (case-insensitive) که مسدود هستند.
 # مثال: BLOCKED_DOMAINS = ["example.com", "bad-server.xyz"]
-BLOCKED_DOMAINS: List[str] = []
-
+BLOCKED_DOMAINS: list[str] = [] # <--- اینجا تغییر کرد
 
