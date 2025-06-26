@@ -19,7 +19,7 @@ from user_settings import SOURCE_URLS
 
 # پیکربندی لاگ‌گیری (سطح پیش‌فرض INFO. برای دیدن جزئیات بیشتر به logging.DEBUG تغییر دهید.)
 logging.basicConfig(
-    level=logging.INFO, 
+    level=logging.INFO, # <--- اینجا سطح لاگ‌گیری را به INFO تنظیم کنید (می‌توانید برای عیب‌یابی به DEBUG تغییر دهید).
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('proxy_fetcher.log'), 
@@ -270,7 +270,7 @@ class ConfigFetcher:
     def add_new_telegram_channel(self, new_channel_url: str):
         """
         یک کانال تلگرام جدید را (در صورت عدم وجود) به لیست منابع اضافه می‌کند.
-        **تغییر یافته**: فیلتر کردن کانال‌هایی که به "bot" ختم می‌شوند.
+        فیلتر کردن کانال‌هایی که به "bot" ختم می‌شوند.
         """
         # استخراج نام کاربری از URL
         channel_name_match = re.search(r't\.me/(?:s/)?([a-zA-Z0-9_]+)', new_channel_url)
@@ -391,641 +391,48 @@ class ConfigFetcher:
             logger.debug("رشته کانفیگ ورودی خالی است. نادیده گرفته شد.")
             return None
 
-        config_string_temp = raw_config_string 
-        if config_string_temp.startswith('hy2://'):
-            config_string_temp = self.validator.normalize_hysteria2_protocol(config_string_temp)
-        elif config_string_temp.startswith('hy1://'):
-            config_string_temp = config_string_temp.replace('hy1://', 'hysteria://', 1) 
+        config_string_for_processing = raw_config_string 
+        if config_string_for_processing.startswith('hy2://'):
+            config_string_for_processing = self.validator.normalize_hysteria2_protocol(config_string_for_processing)
+        elif config_string_for_processing.startswith('hy1://'):
+            config_string_for_processing = config_string_for_processing.replace('hy1://', 'hysteria://', 1) 
             
         flag = "🏳️"
         country = "Unknown"
         actual_protocol = None
 
-        found_protocol = False
-        for proto_prefix in self.config.SUPPORTED_PROTOCOLS:
-            if config_string_temp.startswith(proto_prefix):
-                actual_protocol = proto_prefix
-                found_protocol = True
-                break
-            for alias in self.config.SUPPORTED_PROTOCOLS[proto_prefix].get('aliases', []):
-                if config_string_temp.startswith(alias):
-                    actual_protocol = proto_prefix 
-                    config_string_temp = config_string_temp.replace(alias, proto_prefix, 1)
-                    found_protocol = True
-                    break
-            if found_protocol:
-                break
-        
-        if not found_protocol:
-            logger.debug(f"پروتکل برای کانفیگ خام شناسایی نشد: '{raw_config_string[:min(len(raw_config_string), 50)]}...'. نادیده گرفته شد.")
-            return None
-
-
-        if not self.config.is_protocol_enabled(actual_protocol):
-            logger.debug(f"پروتکل '{actual_protocol}' فعال نیست. کانفیگ نادیده گرفته شد: '{config_string_temp[:min(len(config_string_temp), 50)]}...'.")
-            return None 
-        
-        if actual_protocol == "vmess://":
-            config_string_temp = self.validator.clean_vmess_config(config_string_temp)
-        elif actual_protocol == "ssr://":
-            config_string_temp = self.validator.clean_ssr_config(config_string_temp)
-        
-        clean_config = self.validator.clean_config(config_string_temp)
-        
-        if self.validator.validate_protocol_config(clean_config, actual_protocol):
-            canonical_id = self.validator.get_canonical_id(clean_config, actual_protocol)
-            
-            if canonical_id is None:
-                logger.debug(f"شناسه کانونی برای کانفیگ '{actual_protocol}' تولید نشد. نادیده گرفته شد: '{clean_config[:min(len(clean_config), 50)]}...'.")
-                return None
-                
-            with self._lock: 
-                if canonical_id not in self.seen_configs:
-                    server_address = self.validator.get_server_address(clean_config, actual_protocol)
-                    if server_address:
-                        flag, country = self.get_location(server_address)
-                    
-                    self.seen_configs.add(canonical_id) 
-                    self.protocol_counts[actual_protocol] = self.protocol_counts.get(actual_protocol, 0) + 1 
-                    
-                    logger.debug(f"کانفیگ منحصر به فرد '{actual_protocol}' یافت شد: '{clean_config[:min(len(clean_config), 50)]}...' (ID: {canonical_id[:min(len(canonical_id), 20)]}...).")
-                    
-                    return {
-                        'config': clean_config, 
-                        'protocol': actual_protocol,
-                        'flag': flag,
-                        'country': country,
-                        'canonical_id': canonical_id 
-                    }
-                else:
-                    logger.debug(f"کانفیگ تکراری '{actual_protocol}' با شناسه کانونی {canonical_id[:min(len(canonical_id), 20)]}... نادیده گرفته شد: '{clean_config[:min(len(clean_config), 50)]}...'.")
-            else:
-                logger.debug(f"اعتبارسنجی پروتکل '{actual_protocol}' برای کانفیگ '{clean_config[:min(len(clean_config), 50)]}...' ناموفق بود. نادیده گرفته شد.")
-            return None # کانفیگ معتبر نیست یا تکراری است، پس None برگردانید
-                
-        logger.debug(f"کانفیگ '{raw_config_string[:min(len(raw_config_string), 50)]}...' با هیچ پروتکل فعال یا معتبری مطابقت نداشت. نادیده گرفته شد.")
-        return None
-
-    def extract_date_from_message(self, message) -> Optional[datetime]:
-        """
-        تاریخ و زمان انتشار پیام را از عنصر <time> در HTML پیام تلگرام استخراج می‌کند.
-        """
-        try:
-            time_element = message.find_parent('div', class_='tgme_widget_message').find('time')
-            if time_element and 'datetime' in time_element.attrs:
-                return datetime.fromisoformat(time_element['datetime'].replace('Z', '+00:00'))
-        except Exception as e:
-            logger.debug(f"خطا در استخراج تاریخ از پیام: {str(e)}")
-            pass
-        return None
-
-    def is_config_valid(self, config_text: str, date: Optional[datetime]) -> bool:
-        """
-        بررسی می‌کند که آیا تاریخ کانفیگ به اندازه کافی جدید است (طبق MAX_CONFIG_AGE_DAYS).
-        """
-        if not date:
-            logger.debug("تاریخ کانفیگ موجود نیست، معتبر فرض می‌شود.")
-            return True
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=self.config.MAX_CONFIG_AGE_DAYS)
-        if date >= cutoff_date:
-            return True
-        else:
-            logger.debug(f"کانفیگ به دلیل قدیمی بودن تاریخ (تاریخ: {date}) نادیده گرفته شد.")
-            return False
-
-    def balance_protocols(self, configs: List[Dict[str, str]]) -> List[Dict[str, str]]:
-        """
-        کانفیگ‌ها را بر اساس پروتکل سازماندهی و متعادل می‌کند تا توزیع مناسبی داشته باشند.
-        این متد تضمین می‌کند که تعداد کانفیگ‌ها برای هر پروتکل از "max_configs" تعیین شده
-        در تنظیمات (برای آن پروتکل) تجاوز نکند.
-        """
-        logger.info("شروع توازن پروتکل‌ها...")
-        protocol_configs: Dict[str, List[Dict[str, str]]] = {p: [] for p in self.config.SUPPORTED_PROTOCOLS}
-        for config_dict in configs:
-            protocol = config_dict['protocol']
-            if protocol.startswith('hy2://'):
-                protocol = 'hysteria2://'
-            elif protocol.startswith('hy1://'):
-                protocol = 'hysteria://'
-            
-            if protocol in protocol_configs:
-                protocol_configs[protocol].append(config_dict)
-            else:
-                logger.warning(f"پروتکل '{protocol}' در لیست پروتکل‌های پشتیبانی شده برای توازن یافت نشد. ممکن است به درستی تعریف نشده باشد.")
-
-        total_configs = sum(len(configs_list) for configs_list in protocol_configs.values())
-        if total_configs == 0:
-            logger.info("هیچ کانفیگی برای توازن پروتکل وجود ندارد.")
-            return []
-            
-        balanced_configs: List[Dict[str, str]] = []
-        sorted_protocols = sorted(
-            protocol_configs.items(),
-            key=lambda x: (
-                self.config.SUPPORTED_PROTOCOLS.get(x[0], {"priority": 999})["priority"], 
-                len(x[1])
-            ),
-            reverse=True
-        )
-        logger.info(f"در حال توازن {total_configs} کانفیگ بر اساس {len(sorted_protocols)} پروتکل مرتب شده...")
-        
-        for protocol, protocol_config_list in sorted_protocols:
-            protocol_info = self.config.SUPPORTED_PROTOCOLS.get(protocol)
-            if not protocol_info:
-                logger.warning(f"اطلاعات پیکربندی برای پروتکل '{protocol}' یافت نشد، نادیده گرفته شد.")
-                continue
-
-            if len(protocol_config_list) >= protocol_info["min_configs"]:
-                num_to_add = min(
-                    protocol_info["max_configs"],  
-                    len(protocol_config_list)     
-                )
-                balanced_configs.extend(protocol_config_list[:num_to_add])
-                logger.info(f"پروتکل '{protocol}': {num_to_add} کانفیگ اضافه شد (از {len(protocol_config_list)} موجود، حداکثر مجاز: {protocol_info['max_configs']}).")
-            elif protocol_info["flexible_max"] and len(protocol_config_list) > 0:
-                balanced_configs.extend(protocol_config_list)
-                logger.info(f"پروتکل '{protocol}': {len(protocol_config_list)} کانفیگ اضافه شد (حالت flexible_max).")
-            else:
-                logger.debug(f"پروتکل '{protocol}': تعداد کانفیگ‌های کافی یافت نشد ({len(protocol_config_list)}).")
-        
-        logger.info(f"توازن پروتکل‌ها کامل شد. مجموعاً {len(balanced_configs)} کانفیگ نهایی.")
-        return balanced_configs
-
-    def run_full_pipeline(self):
-        """
-        متد اصلی برای اجرای کامل pipeline واکشی، پردازش، توازن و ذخیره کانفیگ‌ها.
-        """
-        all_raw_configs_collected: List[str] = []
-        all_new_channel_urls_discovered: Set[str] = set()
-        
-        channels_to_process = []
-        now = datetime.now(timezone.utc)
-        
-        logger.info(f"در حال فیلتر کردن کانال‌ها برای پردازش. زمان فعلی: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}.")
-        for channel in list(self.config.SOURCE_URLS):
-            if not channel.enabled:
-                logger.debug(f"کانال '{channel.url}' غیرفعال است و نادیده گرفته شد.")
-                continue
-            if channel.next_check_time and channel.next_check_time > now:
-                logger.info(f"کانال '{channel.url}' به دلیل تلاش مجدد هوشمند نادیده گرفته شد. زمان بررسی بعدی: {channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}.")
-                continue
-            channels_to_process.append(channel)
-            logger.debug(f"کانال '{channel.url}' برای پردازش انتخاب شد.")
-        
-        total_channels_to_process = len(channels_to_process)
-        if total_channels_to_process == 0:
-            logger.info("هیچ کانال فعالی برای پردازش وجود ندارد (یا همه در حالت تلاش مجدد هوشمند هستند). فرآیند واکشی به پایان رسید.")
-            return []
-
-        logger.info(f"شروع فاز ۱: واکشی موازی داده‌های خام و کشف اولیه کانال‌ها از {total_channels_to_process} کانال فعال...")
-        
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, total_channels_to_process + 1)) as executor:
-            futures = {executor.submit(self._fetch_raw_data_for_channel, channel): channel for channel in channels_to_process}
-            
-            processed_channels_count = 0
-            for future in concurrent.futures.as_completed(futures):
-                channel_processed = futures[future]
-                processed_channels_count += 1
-                progress_percentage = (processed_channels_count / total_channels_to_process) * 100
-                
-                try:
-                    raw_configs, new_channel_urls, channel_status_info = future.result()
-                    
-                    channel_processed.metrics.total_configs = channel_status_info['total_configs_raw']
-                    
-                    if channel_status_info['success']:
-                        self.config.update_channel_stats(channel_processed, True, channel_status_info['response_time'])
-                        self.config.adjust_protocol_limits(channel_processed)
-                        channel_processed.retry_level = 0
-                        channel_processed.next_check_time = None
-                        logger.info(f"پیشرفت: {progress_percentage:.2f}% ({processed_channels_count}/{total_channels_to_process}) - کانال '{channel_processed.url}' واکشی شد. ({len(raw_configs)} کانفیگ خام، {len(new_channel_urls)} کانال جدید پیدا شد).")
-                    else:
-                        self.config.update_channel_stats(channel_processed, False, channel_status_info['response_time'])
-                        channel_processed.retry_level = min(channel_processed.retry_level + 1, self.max_retry_level)
-                        channel_processed.next_check_time = datetime.now(timezone.utc) + self.retry_intervals[channel_processed.retry_level]
-                        logger.warning(f"پیشرفت: {progress_percentage:.2f}% ({processed_channels_count}/{total_channels_to_process}) - کانال '{channel_processed.url}' واکشی ناموفق بود. خطا: {channel_status_info.get('error_message', 'نامعلوم')}. (بررسی بعدی: {channel_processed.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')})")
-                        
-                    all_raw_configs_collected.extend(raw_configs)
-                    for url in new_channel_urls:
-                        all_new_channel_urls_discovered.add(url) 
-                        
-                except Exception as exc:
-                    logger.error(f"پیشرفت: {progress_percentage:.2f}% ({processed_channels_count}/{total_channels_to_process}) - کانال '{channel_processed.url}' در حین واکشی موازی با خطا مواجه شد: {exc}", exc_info=True)
-
-        logger.info(f"فاز ۱ تکمیل شد. مجموعاً {len(all_raw_configs_collected)} کانفیگ خام و {len(all_new_channel_urls_discovered)} URL کانال جدید کشف شد.")
-
-        logger.info("شروع فاز ۲: کشف کانال‌ها از تمامی کانفیگ‌های خام و اضافه کردن به لیست منابع اصلی...")
-        
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            futures_phase2 = []
-            for raw_cfg_string in all_raw_configs_collected:
-                futures_phase2.append(executor.submit(self.validator.extract_telegram_channels_from_config, raw_cfg_string))
-            
-            for future in concurrent.futures.as_completed(futures_phase2):
-                try:
-                    discovered_from_config = future.result()
-                    for new_url in discovered_from_config:
-                        all_new_channel_urls_discovered.add(new_url)
-                except Exception as exc:
-                    logger.error(f"خطا در استخراج کانال از کانفیگ خام (فاز 2): {exc}", exc_info=True)
-
-        for new_url in all_new_channel_urls_discovered:
-            self.add_new_telegram_channel(new_url)
-        logger.info(f"فاز ۲ تکمیل شد. لیست منابع اصلی اکنون شامل {len(self.config.SOURCE_URLS)} کانال است (پس از اضافه شدن موارد جدید).")
-
-        logger.info("شروع فاز ۳: پردازش و حذف دقیق تکراری‌ها (بر اساس شناسه کانونی) به صورت موازی...")
-        final_enriched_configs: List[Dict[str, str]] = []
-        
-        if not all_raw_configs_collected:
-            logger.info("هیچ کانفیگ خامی برای پردازش در فاز ۳ یافت نشد. فاز ۳ نادیده گرفته شد.")
-            logger.info("فاز ۳ تکمیل شد. مجموعاً 0 کانفیگ منحصر به فرد و غنی شده آماده توازن.")
-            return [] 
-
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor: 
-            futures = {executor.submit(self._process_single_raw_config, cfg_str): cfg_str for cfg_str in all_raw_configs_collected}
-            
-            processed_configs_count_phase3 = 0
-            # **جدید**: اضافه کردن Progress bar برای فاز 3
-            if len(all_raw_configs_collected) > 0:
-                for future in concurrent.futures.as_completed(futures):
-                    processed_configs_count_phase3 += 1
-                    progress_percentage_phase3 = (processed_configs_count_phase3 / len(all_raw_configs_collected)) * 100
-                    
-                    try:
-                        enriched_config_dict = future.result()
-                        if enriched_config_dict:
-                            final_enriched_configs.append(enriched_config_dict)
-                        
-                        if processed_configs_count_phase3 % 100 == 0 or processed_configs_count_phase3 == len(all_raw_configs_collected):
-                             logger.info(f"پیشرفت فاز ۳: {progress_percentage_phase3:.2f}% ({processed_configs_count_phase3}/{len(all_raw_configs_collected)}) کانفیگ خام پردازش شد. (کانفیگ‌های منحصر به فرد تاکنون: {len(final_enriched_configs)})")
-                    except Exception as exc:
-                        logger.error(f"خطا در پردازش موازی کانفیگ خام: '{futures[future][:min(len(futures[future]), 50)]}...': {exc}", exc_info=True)
-            else:
-                logger.info("هیچ کانفیگ خامی برای پردازش در فاز ۳ یافت نشد.")
-
-        logger.info(f"فاز ۳ تکمیل شد. مجموعاً {len(final_enriched_configs)} کانفیگ منحصر به فرد و غنی شده آماده توازن.")
-
-        logger.info("شروع فاز ۴: توازن پروتکل و ذخیره خروجی‌ها...")
-        final_configs_balanced = self.balance_protocols(final_enriched_configs)
-        logger.info(f"فاز ۴ تکمیل شد. {len(final_configs_balanced)} کانفیگ نهایی پس از توازن آماده ذخیره.")
-
-        return final_configs_balanced
-
-    def _process_single_raw_config(self, raw_config_string: str) -> Optional[Dict[str, str]]:
-        """
-        پردازش یک کانفیگ خام (برای فاز 3).
-        """
-        if not raw_config_string:
-            logger.debug("رشته کانفیگ ورودی خالی است. نادیده گرفته شد.")
-            return None
-
-        config_string_temp = raw_config_string 
-        if config_string_temp.startswith('hy2://'):
-            config_string_temp = self.validator.normalize_hysteria2_protocol(config_string_temp)
-        elif config_string_temp.startswith('hy1://'):
-            config_string_temp = config_string_temp.replace('hy1://', 'hysteria://', 1) 
-            
-        flag = "🏳️"
-        country = "Unknown"
-        actual_protocol = None
-
-        found_protocol = False
-        # **تغییر یافته**: بهبود حلقه پیدا کردن پروتکل اصلی با استفاده از get_valid_protocol_from_config
-        # این به config_validator.py منتقل شد و از آنجا فراخوانی خواهد شد.
-        
-        # شناسایی پروتکل اصلی
-        # از یک متغیر temp برای config_string_temp استفاده کنید که تغییرات موقت را نگه دارد
-        temp_config_str_for_protocol_detection = raw_config_string 
+        found_protocol_match = False
         
         # این لوپ برای پیدا کردن پروتکل اصلی کانفیگ است.
-        # پروتکل‌های پشتیبانی شده در config.py تعریف شده‌اند.
         for proto_prefix in self.config.SUPPORTED_PROTOCOLS:
-            # بررسی تطابق مستقیم
-            if temp_config_str_for_protocol_detection.startswith(proto_prefix):
+            if config_string_for_processing.startswith(proto_prefix):
                 actual_protocol = proto_prefix
-                found_protocol = True
-                break
-            # بررسی aliasها
-            for alias in self.config.SUPPORTED_PROTOCOLS[proto_prefix].get('aliases', []):
-                if temp_config_str_for_protocol_detection.startswith(alias):
-                    actual_protocol = proto_prefix # استفاده از پروتکل اصلی برای alias
-                    temp_config_str_for_protocol_detection = temp_config_str_for_protocol_detection.replace(alias, proto_prefix, 1) # نرمال‌سازی URL برای پردازش بعدی
-                    found_protocol = True
-                    break
-            if found_protocol:
-                break
-
-        if not found_protocol:
-            logger.debug(f"پروتکل برای کانفیگ خام شناسایی نشد: '{raw_config_string[:min(len(raw_config_string), 50)]}...'. نادیده گرفته شد.")
-            return None
-
-
-        if not self.config.is_protocol_enabled(actual_protocol):
-            logger.debug(f"پروتکل '{actual_protocol}' فعال نیست. کانفیگ نادیده گرفته شد: '{config_string_temp[:min(len(config_string_temp), 50)]}...'.")
-            return None 
-        
-        # پاکسازی خاص برای پروتکل‌های خاص (VMess و SSR)
-        if actual_protocol == "vmess://":
-            config_string_temp = self.validator.clean_vmess_config(config_string_temp)
-        elif actual_protocol == "ssr://":
-            config_string_temp = self.validator.clean_ssr_config(config_string_temp)
-        
-        clean_config = self.validator.clean_config(config_string_temp)
-        
-        if self.validator.validate_protocol_config(clean_config, actual_protocol):
-            canonical_id = self.validator.get_canonical_id(clean_config, actual_protocol)
-            
-            if canonical_id is None:
-                logger.debug(f"شناسه کانونی برای کانفیگ '{actual_protocol}' تولید نشد. نادیده گرفته شد: '{clean_config[:min(len(clean_config), 50)]}...'.")
-                return None
-                        
-            with self._lock: 
-                if canonical_id not in self.seen_configs:
-                    server_address = self.validator.get_server_address(clean_config, actual_protocol)
-                    if server_address:
-                        flag, country = self.get_location(server_address)
-                    
-                    self.seen_configs.add(canonical_id) 
-                    self.protocol_counts[actual_protocol] = self.protocol_counts.get(actual_protocol, 0) + 1 
-                    
-                    logger.debug(f"کانفیگ منحصر به فرد '{actual_protocol}' یافت شد: '{clean_config[:min(len(clean_config), 50)]}...' (ID: {canonical_id[:min(len(canonical_id), 20)]}...).")
-                    
-                    return {
-                        'config': clean_config, 
-                        'protocol': actual_protocol,
-                        'flag': flag,
-                        'country': country,
-                        'canonical_id': canonical_id 
-                    }
-                else:
-                    logger.debug(f"کانفیگ تکراری '{actual_protocol}' با شناسه کانونی {canonical_id[:min(len(canonical_id), 20)]}... نادیده گرفته شد: '{clean_config[:min(len(clean_config), 50)]}...'.")
-            else:
-                logger.debug(f"اعتبارسنجی پروتکل '{actual_protocol}' برای کانفیگ '{clean_config[:min(len(clean_config), 50)]}...' ناموفق بود. نادیده گرفته شد.")
-            return None 
-                
-        logger.debug(f"کانفیگ '{raw_config_string[:min(len(raw_config_string), 50)]}...' با هیچ پروتکل فعال یا معتبری مطابقت نداشت. نادیده گرفته شد.")
-        return None
-
-    def extract_date_from_message(self, message) -> Optional[datetime]:
-        """
-        تاریخ و زمان انتشار پیام را از عنصر <time> در HTML پیام تلگرام استخراج می‌کند.
-        """
-        try:
-            time_element = message.find_parent('div', class_='tgme_widget_message').find('time')
-            if time_element and 'datetime' in time_element.attrs:
-                return datetime.fromisoformat(time_element['datetime'].replace('Z', '+00:00'))
-        except Exception as e:
-            logger.debug(f"خطا در استخراج تاریخ از پیام: {str(e)}")
-            pass
-        return None
-
-    def is_config_valid(self, config_text: str, date: Optional[datetime]) -> bool:
-        """
-        بررسی می‌کند که آیا تاریخ کانفیگ به اندازه کافی جدید است (طبق MAX_CONFIG_AGE_DAYS).
-        """
-        if not date:
-            logger.debug("تاریخ کانفیگ موجود نیست، معتبر فرض می‌شود.")
-            return True
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=self.config.MAX_CONFIG_AGE_DAYS)
-        if date >= cutoff_date:
-            return True
-        else:
-            logger.debug(f"کانفیگ به دلیل قدیمی بودن تاریخ (تاریخ: {date}) نادیده گرفته شد.")
-            return False
-
-    def balance_protocols(self, configs: List[Dict[str, str]]) -> List[Dict[str, str]]:
-        """
-        کانفیگ‌ها را بر اساس پروتکل سازماندهی و متعادل می‌کند تا توزیع مناسبی داشته باشند.
-        این متد تضمین می‌کند که تعداد کانفیگ‌ها برای هر پروتکل از "max_configs" تعیین شده
-        در تنظیمات (برای آن پروتکل) تجاوز نکند.
-        """
-        logger.info("شروع توازن پروتکل‌ها...")
-        protocol_configs: Dict[str, List[Dict[str, str]]] = {p: [] for p in self.config.SUPPORTED_PROTOCOLS}
-        for config_dict in configs:
-            protocol = config_dict['protocol']
-            if protocol.startswith('hy2://'):
-                protocol = 'hysteria2://'
-            elif protocol.startswith('hy1://'):
-                protocol = 'hysteria://'
-            
-            if protocol in protocol_configs:
-                protocol_configs[protocol].append(config_dict)
-            else:
-                logger.warning(f"پروتکل '{protocol}' در لیست پروتکل‌های پشتیبانی شده برای توازن یافت نشد. ممکن است به درستی تعریف نشده باشد.")
-
-        total_configs = sum(len(configs_list) for configs_list in protocol_configs.values())
-        if total_configs == 0:
-            logger.info("هیچ کانفیگی برای توازن پروتکل وجود ندارد.")
-            return []
-            
-        balanced_configs: List[Dict[str, str]] = []
-        sorted_protocols = sorted(
-            protocol_configs.items(),
-            key=lambda x: (
-                self.config.SUPPORTED_PROTOCOLS.get(x[0], {"priority": 999})["priority"], 
-                len(x[1])
-            ),
-            reverse=True
-        )
-        logger.info(f"در حال توازن {total_configs} کانفیگ بر اساس {len(sorted_protocols)} پروتکل مرتب شده...")
-        
-        for protocol, protocol_config_list in sorted_protocols:
-            protocol_info = self.config.SUPPORTED_PROTOCOLS.get(protocol)
-            if not protocol_info:
-                logger.warning(f"اطلاعات پیکربندی برای پروتکل '{protocol}' یافت نشد، نادیده گرفته شد.")
-                continue
-
-            if len(protocol_config_list) >= protocol_info["min_configs"]:
-                num_to_add = min(
-                    protocol_info["max_configs"],  
-                    len(protocol_config_list)     
-                )
-                balanced_configs.extend(protocol_config_list[:num_to_add])
-                logger.info(f"پروتکل '{protocol}': {num_to_add} کانفیگ اضافه شد (از {len(protocol_config_list)} موجود، حداکثر مجاز: {protocol_info['max_configs']}).")
-            elif protocol_info["flexible_max"] and len(protocol_config_list) > 0:
-                balanced_configs.extend(protocol_config_list)
-                logger.info(f"پروتکل '{protocol}': {len(protocol_config_list)} کانفیگ اضافه شد (حالت flexible_max).")
-            else:
-                logger.debug(f"پروتکل '{protocol}': تعداد کانفیگ‌های کافی یافت نشد ({len(protocol_config_list)}).")
-        
-        logger.info(f"توازن پروتکل‌ها کامل شد. مجموعاً {len(balanced_configs)} کانفیگ نهایی.")
-        return balanced_configs
-
-    def run_full_pipeline(self):
-        """
-        متد اصلی برای اجرای کامل pipeline واکشی، پردازش، توازن و ذخیره کانفیگ‌ها.
-        """
-        all_raw_configs_collected: List[str] = []
-        all_new_channel_urls_discovered: Set[str] = set()
-        
-        channels_to_process = []
-        now = datetime.now(timezone.utc)
-        
-        logger.info(f"در حال فیلتر کردن کانال‌ها برای پردازش. زمان فعلی: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}.")
-        for channel in list(self.config.SOURCE_URLS):
-            if not channel.enabled:
-                logger.debug(f"کانال '{channel.url}' غیرفعال است و نادیده گرفته شد.")
-                continue
-            if channel.next_check_time and channel.next_check_time > now:
-                logger.info(f"کانال '{channel.url}' به دلیل تلاش مجدد هوشمند نادیده گرفته شد. زمان بررسی بعدی: {channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}.")
-                continue
-            channels_to_process.append(channel)
-            logger.debug(f"کانال '{channel.url}' برای پردازش انتخاب شد.")
-        
-        total_channels_to_process = len(channels_to_process)
-        if total_channels_to_process == 0:
-            logger.info("هیچ کانال فعالی برای پردازش وجود ندارد (یا همه در حالت تلاش مجدد هوشمند هستند). فرآیند واکشی به پایان رسید.")
-            return []
-
-        logger.info(f"شروع فاز ۱: واکشی موازی داده‌های خام و کشف اولیه کانال‌ها از {total_channels_to_process} کانال فعال...")
-        
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, total_channels_to_process + 1)) as executor:
-            futures = {executor.submit(self._fetch_raw_data_for_channel, channel): channel for channel in channels_to_process}
-            
-            processed_channels_count = 0
-            for future in concurrent.futures.as_completed(futures):
-                channel_processed = futures[future]
-                processed_channels_count += 1
-                progress_percentage = (processed_channels_count / total_channels_to_process) * 100
-                
-                try:
-                    raw_configs, new_channel_urls, channel_status_info = future.result()
-                    
-                    channel_processed.metrics.total_configs = channel_status_info['total_configs_raw']
-                    
-                    if channel_status_info['success']:
-                        self.config.update_channel_stats(channel_processed, True, channel_status_info['response_time'])
-                        self.config.adjust_protocol_limits(channel_processed)
-                        channel_processed.retry_level = 0
-                        channel_processed.next_check_time = None
-                        logger.info(f"پیشرفت: {progress_percentage:.2f}% ({processed_channels_count}/{total_channels_to_process}) - کانال '{channel_processed.url}' واکشی شد. ({len(raw_configs)} کانفیگ خام، {len(new_channel_urls)} کانال جدید پیدا شد).")
-                    else:
-                        self.config.update_channel_stats(channel_processed, False, channel_status_info['response_time'])
-                        channel_processed.retry_level = min(channel_processed.retry_level + 1, self.max_retry_level)
-                        channel_processed.next_check_time = datetime.now(timezone.utc) + self.retry_intervals[channel_processed.retry_level]
-                        logger.warning(f"پیشرفت: {progress_percentage:.2f}% ({processed_channels_count}/{total_channels_to_process}) - کانال '{channel_processed.url}' واکشی ناموفق بود. خطا: {channel_status_info.get('error_message', 'نامعلوم')}. (بررسی بعدی: {channel_processed.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')})")
-                        
-                    all_raw_configs_collected.extend(raw_configs)
-                    for url in new_channel_urls:
-                        all_new_channel_urls_discovered.add(url) 
-                        
-                except Exception as exc:
-                    logger.error(f"پیشرفت: {progress_percentage:.2f}% ({processed_channels_count}/{total_channels_to_process}) - کانال '{channel_processed.url}' در حین واکشی موازی با خطا مواجه شد: {exc}", exc_info=True)
-
-        logger.info(f"فاز ۱ تکمیل شد. مجموعاً {len(all_raw_configs_collected)} کانفیگ خام و {len(all_new_channel_urls_discovered)} URL کانال جدید کشف شد.")
-
-        logger.info("شروع فاز ۲: کشف کانال‌ها از تمامی کانفیگ‌های خام و اضافه کردن به لیست منابع اصلی...")
-        
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            futures_phase2 = []
-            for raw_cfg_string in all_raw_configs_collected:
-                futures_phase2.append(executor.submit(self.validator.extract_telegram_channels_from_config, raw_cfg_string))
-            
-            for future in concurrent.futures.as_completed(futures_phase2):
-                try:
-                    discovered_from_config = future.result()
-                    for new_url in discovered_from_config:
-                        all_new_channel_urls_discovered.add(new_url)
-                except Exception as exc:
-                    logger.error(f"خطا در استخراج کانال از کانفیگ خام (فاز 2): {exc}", exc_info=True)
-
-        for new_url in all_new_channel_urls_discovered:
-            self.add_new_telegram_channel(new_url)
-        logger.info(f"فاز ۲ تکمیل شد. لیست منابع اصلی اکنون شامل {len(self.config.SOURCE_URLS)} کانال است (پس از اضافه شدن موارد جدید).")
-
-        logger.info("شروع فاز ۳: پردازش و حذف دقیق تکراری‌ها (بر اساس شناسه کانونی) به صورت موازی...")
-        final_enriched_configs: List[Dict[str, str]] = []
-        
-        if not all_raw_configs_collected:
-            logger.info("هیچ کانفیگ خامی برای پردازش در فاز ۳ یافت نشد. فاز ۳ نادیده گرفته شد.")
-            logger.info("فاز ۳ تکمیل شد. مجموعاً 0 کانفیگ منحصر به فرد و غنی شده آماده توازن.")
-            return [] 
-
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor: 
-            # **تغییر یافته**: process_config حالا به کانال وابسته نیست و فقط رشته کانفیگ خام را می‌گیرد.
-            futures = {executor.submit(self._process_single_raw_config, cfg_str): cfg_str for cfg_str in all_raw_configs_collected}
-            
-            processed_configs_count_phase3 = 0
-            # **جدید**: اضافه کردن Progress bar برای فاز 3
-            if len(all_raw_configs_collected) > 0:
-                for future in concurrent.futures.as_completed(futures):
-                    processed_configs_count_phase3 += 1
-                    progress_percentage_phase3 = (processed_configs_count_phase3 / len(all_raw_configs_collected)) * 100
-                    
-                    try:
-                        enriched_config_dict = future.result()
-                        if enriched_config_dict:
-                            final_enriched_configs.append(enriched_config_dict)
-                        
-                        if processed_configs_count_phase3 % 100 == 0 or processed_configs_count_phase3 == len(all_raw_configs_collected):
-                             logger.info(f"پیشرفت فاز ۳: {progress_percentage_phase3:.2f}% ({processed_configs_count_phase3}/{len(all_raw_configs_collected)}) کانفیگ خام پردازش شد. (کانفیگ‌های منحصر به فرد تاکنون: {len(final_enriched_configs)})")
-                    except Exception as exc:
-                        logger.error(f"خطا در پردازش موازی کانفیگ خام: '{futures[future][:min(len(futures[future]), 50)]}...': {exc}", exc_info=True)
-            else:
-                logger.info("هیچ کانفیگ خامی برای پردازش در فاز ۳ یافت نشد.")
-
-        logger.info(f"فاز ۳ تکمیل شد. مجموعاً {len(final_enriched_configs)} کانفیگ منحصر به فرد و غنی شده آماده توازن.")
-
-        logger.info("شروع فاز ۴: توازن پروتکل و ذخیره خروجی‌ها...")
-        final_configs_balanced = self.balance_protocols(final_enriched_configs)
-        logger.info(f"فاز ۴ تکمیل شد. {len(final_configs_balanced)} کانفیگ نهایی پس از توازن آماده ذخیره.")
-
-        return final_configs_balanced
-
-    def _process_single_raw_config(self, raw_config_string: str) -> Optional[Dict[str, str]]:
-        """
-        **تغییر یافته**: پردازش یک کانفیگ خام (برای فاز 3).
-        این متد اکنون کاملا مستقل از شیء 'channel' است و فقط کانفیگ رشته را پردازش می‌کند.
-        """
-        if not raw_config_string:
-            logger.debug("رشته کانفیگ ورودی خالی است. نادیده گرفته شد.")
-            return None
-
-        config_string_temp = raw_config_string 
-        if config_string_temp.startswith('hy2://'):
-            config_string_temp = self.validator.normalize_hysteria2_protocol(config_string_temp)
-        elif config_string_temp.startswith('hy1://'):
-            config_string_temp = config_string_temp.replace('hy1://', 'hysteria://', 1) 
-            
-        flag = "🏳️"
-        country = "Unknown"
-        actual_protocol = None
-
-        found_protocol = False
-        # **تغییر یافته**: این لوپ برای پیدا کردن پروتکل اصلی کانفیگ است.
-        # بهتر است این منطق در config_validator.py به عنوان یک تابع کمکی عمومی باشد.
-        # فعلا برای این عیب یابی، آن را اینجا نگه می داریم.
-        for proto_prefix in self.config.SUPPORTED_PROTOCOLS:
-            if config_string_temp.startswith(proto_prefix):
-                actual_protocol = proto_prefix
-                found_protocol = True
+                found_protocol_match = True
                 break
             for alias in self.config.SUPPORTED_PROTOCOLS[proto_prefix].get('aliases', []):
-                if config_string_temp.startswith(alias):
+                if config_string_for_processing.startswith(alias):
                     actual_protocol = proto_prefix 
-                    config_string_temp = config_string_temp.replace(alias, proto_prefix, 1)
-                    found_protocol = True
+                    config_string_for_processing = config_string_for_processing.replace(alias, proto_prefix, 1) 
+                    found_protocol_match = True
                     break
-            if found_protocol:
+            if found_protocol_match:
                 break
         
-        if not found_protocol:
+        if not found_protocol_match:
             logger.debug(f"پروتکل برای کانفیگ خام شناسایی نشد: '{raw_config_string[:min(len(raw_config_string), 50)]}...'. نادیده گرفته شد.")
             return None
 
 
         if not self.config.is_protocol_enabled(actual_protocol):
-            logger.debug(f"پروتکل '{actual_protocol}' فعال نیست. کانفیگ نادیده گرفته شد: '{config_string_temp[:min(len(config_string_temp), 50)]}...'.")
+            logger.debug(f"پروتکل '{actual_protocol}' فعال نیست. کانفیگ نادیده گرفته شد: '{config_string_for_processing[:min(len(config_string_for_processing), 50)]}...'.")
             return None 
         
         if actual_protocol == "vmess://":
-            config_string_temp = self.validator.clean_vmess_config(config_string_temp)
+            config_string_for_processing = self.validator.clean_vmess_config(config_string_for_processing)
         elif actual_protocol == "ssr://":
-            config_string_temp = self.validator.clean_ssr_config(config_string_temp)
+            config_string_for_processing = self.validator.clean_ssr_config(config_string_for_processing)
         
-        clean_config = self.validator.clean_config(config_string_temp)
+        clean_config = self.validator.clean_config(config_string_for_processing)
         
         if self.validator.validate_protocol_config(clean_config, actual_protocol):
             canonical_id = self.validator.get_canonical_id(clean_config, actual_protocol)
@@ -1054,15 +461,12 @@ class ConfigFetcher:
                     }
                 else:
                     logger.debug(f"کانفیگ تکراری '{actual_protocol}' با شناسه کانونی {canonical_id[:min(len(canonical_id), 20)]}... نادیده گرفته شد: '{clean_config[:min(len(clean_config), 50)]}...'.")
-            else: # **تغییر یافته**: این بلوک `else` به نظر می‌رسد از تورفتگی اشتباه رنج می‌برد.
-                # این `else` مربوط به `if canonical_id not in self.seen_configs` بود و به نظر می‌رسد جای آن درست نیست.
-                # پیام اعتبارسنجی ناموفق، قبلاً توسط `logger.debug` قبل از `break` مدیریت می‌شود.
-                # این بلوک else حذف می‌شود.
-                pass # یا یک لاگ debug اضافی برای پوشش این سناریو
-
-        logger.debug(f"اعتبارسنجی پروتکل '{actual_protocol}' برای کانفیگ '{clean_config[:min(len(clean_config), 50)]}...' ناموفق بود. نادیده گرفته شد.") # این خط به نظر می‌رسد از تورفتگی اشتباه رنج می‌برد.
-        return None # اگر تا اینجا رسیدیم، کانفیگ برگشت داده نشده است.
-
+            
+        else: # این `else` مربوط به `if self.validator.validate_protocol_config`
+            logger.debug(f"اعتبارسنجی پروتکل '{actual_protocol}' برای کانفیگ '{clean_config[:min(len(clean_config), 50)]}...' ناموفق بود. نادیده گرفته شد.")
+            
+        logger.debug(f"کانفیگ '{raw_config_string[:min(len(raw_config_string), 50)]}...' با هیچ پروتکل فعال یا معتبری مطابقت نداشت یا پردازش نشد. نادیده گرفته شد.")
+        return None
 
     def extract_date_from_message(self, message) -> Optional[datetime]:
         """
@@ -1278,9 +682,6 @@ class ConfigFetcher:
             logger.debug("رشته کانفیگ ورودی خالی است. نادیده گرفته شد.")
             return None
 
-        # برای نرمال‌سازی hy2:// و hy1://
-        # این کار در get_canonical_parameters هم انجام می‌شود.
-        # اینجا فقط برای اعتبارسنجی اولیه پروتکل و لاگ‌گیری است.
         config_string_for_processing = raw_config_string 
         if config_string_for_processing.startswith('hy2://'):
             config_string_for_processing = self.validator.normalize_hysteria2_protocol(config_string_for_processing)
@@ -1291,8 +692,10 @@ class ConfigFetcher:
         country = "Unknown"
         actual_protocol = None
 
-        # پیدا کردن پروتکل اصلی کانفیگ از طریق تطابق پیشوندها
         found_protocol_match = False
+        
+        # این لوپ برای پیدا کردن پروتکل اصلی کانفیگ است.
+        # پروتکل‌های پشتیبانی شده در config.py تعریف شده‌اند.
         for proto_prefix in self.config.SUPPORTED_PROTOCOLS:
             if config_string_for_processing.startswith(proto_prefix):
                 actual_protocol = proto_prefix
@@ -1300,8 +703,8 @@ class ConfigFetcher:
                 break
             for alias in self.config.SUPPORTED_PROTOCOLS[proto_prefix].get('aliases', []):
                 if config_string_for_processing.startswith(alias):
-                    actual_protocol = proto_prefix # استفاده از پروتکل اصلی برای alias
-                    config_string_for_processing = config_string_for_processing.replace(alias, proto_prefix, 1) # نرمال‌سازی URL برای پردازش بعدی
+                    actual_protocol = proto_prefix 
+                    config_string_for_processing = config_string_for_processing.replace(alias, proto_prefix, 1) 
                     found_protocol_match = True
                     break
             if found_protocol_match:
@@ -1316,7 +719,6 @@ class ConfigFetcher:
             logger.debug(f"پروتکل '{actual_protocol}' فعال نیست. کانفیگ نادیده گرفته شد: '{config_string_for_processing[:min(len(config_string_for_processing), 50)]}...'.")
             return None 
         
-        # پاکسازی خاص برای پروتکل‌های خاص (VMess و SSR)
         if actual_protocol == "vmess://":
             config_string_for_processing = self.validator.clean_vmess_config(config_string_for_processing)
         elif actual_protocol == "ssr://":
@@ -1351,13 +753,594 @@ class ConfigFetcher:
                     }
                 else:
                     logger.debug(f"کانفیگ تکراری '{actual_protocol}' با شناسه کانونی {canonical_id[:min(len(canonical_id), 20)]}... نادیده گرفته شد: '{clean_config[:min(len(clean_config), 50)]}...'.")
-            # **تغییر یافته**: این بلوک `else` حذف می‌شود، زیرا در `if canonical_id not in self.seen_configs:` مدیریت شده است.
-            # لاگ اعتبارسنجی ناموفق، قبلاً توسط `logger.debug` قبل از `break` مدیریت می‌شود.
             
         else: # این `else` مربوط به `if self.validator.validate_protocol_config`
             logger.debug(f"اعتبارسنجی پروتکل '{actual_protocol}' برای کانفیگ '{clean_config[:min(len(clean_config), 50)]}...' ناموفق بود. نادیده گرفته شد.")
             
-        # این خط فقط اگر کانفیگ برگشت داده نشده باشد اجرا می‌شود.
+        logger.debug(f"کانفیگ '{raw_config_string[:min(len(raw_config_string), 50)]}...' با هیچ پروتکل فعال یا معتبری مطابقت نداشت یا پردازش نشد. نادیده گرفته شد.")
+        return None
+
+    def extract_date_from_message(self, message) -> Optional[datetime]:
+        """
+        تاریخ و زمان انتشار پیام را از عنصر <time> در HTML پیام تلگرام استخراج می‌کند.
+        """
+        try:
+            time_element = message.find_parent('div', class_='tgme_widget_message').find('time')
+            if time_element and 'datetime' in time_element.attrs:
+                return datetime.fromisoformat(time_element['datetime'].replace('Z', '+00:00'))
+        except Exception as e:
+            logger.debug(f"خطا در استخراج تاریخ از پیام: {str(e)}")
+            pass
+        return None
+
+    def is_config_valid(self, config_text: str, date: Optional[datetime]) -> bool:
+        """
+        بررسی می‌کند که آیا تاریخ کانفیگ به اندازه کافی جدید است (طبق MAX_CONFIG_AGE_DAYS).
+        """
+        if not date:
+            logger.debug("تاریخ کانفیگ موجود نیست، معتبر فرض می‌شود.")
+            return True
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=self.config.MAX_CONFIG_AGE_DAYS)
+        if date >= cutoff_date:
+            return True
+        else:
+            logger.debug(f"کانفیگ به دلیل قدیمی بودن تاریخ (تاریخ: {date}) نادیده گرفته شد.")
+            return False
+
+    def balance_protocols(self, configs: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """
+        کانفیگ‌ها را بر اساس پروتکل سازماندهی و متعادل می‌کند تا توزیع مناسبی داشته باشند.
+        این متد تضمین می‌کند که تعداد کانفیگ‌ها برای هر پروتکل از "max_configs" تعیین شده
+        در تنظیمات (برای آن پروتکل) تجاوز نکند.
+        """
+        logger.info("شروع توازن پروتکل‌ها...")
+        protocol_configs: Dict[str, List[Dict[str, str]]] = {p: [] for p in self.config.SUPPORTED_PROTOCOLS}
+        for config_dict in configs:
+            protocol = config_dict['protocol']
+            if protocol.startswith('hy2://'):
+                protocol = 'hysteria2://'
+            elif protocol.startswith('hy1://'):
+                protocol = 'hysteria://'
+            
+            if protocol in protocol_configs:
+                protocol_configs[protocol].append(config_dict)
+            else:
+                logger.warning(f"پروتکل '{protocol}' در لیست پروتکل‌های پشتیبانی شده برای توازن یافت نشد. ممکن است به درستی تعریف نشده باشد.")
+
+        total_configs = sum(len(configs_list) for configs_list in protocol_configs.values())
+        if total_configs == 0:
+            logger.info("هیچ کانفیگی برای توازن پروتکل وجود ندارد.")
+            return []
+            
+        balanced_configs: List[Dict[str, str]] = []
+        sorted_protocols = sorted(
+            protocol_configs.items(),
+            key=lambda x: (
+                self.config.SUPPORTED_PROTOCOLS.get(x[0], {"priority": 999})["priority"], 
+                len(x[1])
+            ),
+            reverse=True
+        )
+        logger.info(f"در حال توازن {total_configs} کانفیگ بر اساس {len(sorted_protocols)} پروتکل مرتب شده...")
+        
+        for protocol, protocol_config_list in sorted_protocols:
+            protocol_info = self.config.SUPPORTED_PROTOCOLS.get(protocol)
+            if not protocol_info:
+                logger.warning(f"اطلاعات پیکربندی برای پروتکل '{protocol}' یافت نشد، نادیده گرفته شد.")
+                continue
+
+            if len(protocol_config_list) >= protocol_info["min_configs"]:
+                num_to_add = min(
+                    protocol_info["max_configs"],  
+                    len(protocol_config_list)     
+                )
+                balanced_configs.extend(protocol_config_list[:num_to_add])
+                logger.info(f"پروتکل '{protocol}': {num_to_add} کانفیگ اضافه شد (از {len(protocol_config_list)} موجود، حداکثر مجاز: {protocol_info['max_configs']}).")
+            elif protocol_info["flexible_max"] and len(protocol_config_list) > 0:
+                balanced_configs.extend(protocol_config_list)
+                logger.info(f"پروتکل '{protocol}': {len(protocol_config_list)} کانفیگ اضافه شد (حالت flexible_max).")
+            else:
+                logger.debug(f"پروتکل '{protocol}': تعداد کانفیگ‌های کافی یافت نشد ({len(protocol_config_list)}).")
+        
+        logger.info(f"توازن پروتکل‌ها کامل شد. مجموعاً {len(balanced_configs)} کانفیگ نهایی.")
+        return balanced_configs
+
+    def run_full_pipeline(self):
+        """
+        متد اصلی برای اجرای کامل pipeline واکشی، پردازش، توازن و ذخیره کانفیگ‌ها.
+        """
+        all_raw_configs_collected: List[str] = []
+        all_new_channel_urls_discovered: Set[str] = set()
+        
+        channels_to_process = []
+        now = datetime.now(timezone.utc)
+        
+        logger.info(f"در حال فیلتر کردن کانال‌ها برای پردازش. زمان فعلی: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}.")
+        for channel in list(self.config.SOURCE_URLS):
+            if not channel.enabled:
+                logger.debug(f"کانال '{channel.url}' غیرفعال است و نادیده گرفته شد.")
+                continue
+            if channel.next_check_time and channel.next_check_time > now:
+                logger.info(f"کانال '{channel.url}' به دلیل تلاش مجدد هوشمند نادیده گرفته شد. زمان بررسی بعدی: {channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}.")
+                continue
+            channels_to_process.append(channel)
+            logger.debug(f"کانال '{channel.url}' برای پردازش انتخاب شد.")
+        
+        total_channels_to_process = len(channels_to_process)
+        if total_channels_to_process == 0:
+            logger.info("هیچ کانال فعالی برای پردازش وجود ندارد (یا همه در حالت تلاش مجدد هوشمند هستند). فرآیند واکشی به پایان رسید.")
+            return []
+
+        logger.info(f"شروع فاز ۱: واکشی موازی داده‌های خام و کشف اولیه کانال‌ها از {total_channels_to_process} کانال فعال...")
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, total_channels_to_process + 1)) as executor:
+            futures = {executor.submit(self._fetch_raw_data_for_channel, channel): channel for channel in channels_to_process}
+            
+            processed_channels_count = 0
+            for future in concurrent.futures.as_completed(futures):
+                channel_processed = futures[future]
+                processed_channels_count += 1
+                progress_percentage = (processed_channels_count / total_channels_to_process) * 100
+                
+                try:
+                    raw_configs, new_channel_urls, channel_status_info = future.result()
+                    
+                    channel_processed.metrics.total_configs = channel_status_info['total_configs_raw']
+                    
+                    if channel_status_info['success']:
+                        self.config.update_channel_stats(channel_processed, True, channel_status_info['response_time'])
+                        self.config.adjust_protocol_limits(channel_processed)
+                        channel_processed.retry_level = 0
+                        channel_processed.next_check_time = None
+                        logger.info(f"پیشرفت: {progress_percentage:.2f}% ({processed_channels_count}/{total_channels_to_process}) - کانال '{channel_processed.url}' واکشی شد. ({len(raw_configs)} کانفیگ خام، {len(new_channel_urls)} کانال جدید پیدا شد).")
+                    else:
+                        self.config.update_channel_stats(channel_processed, False, channel_status_info['response_time'])
+                        channel_processed.retry_level = min(channel_processed.retry_level + 1, self.max_retry_level)
+                        channel_processed.next_check_time = datetime.now(timezone.utc) + self.retry_intervals[channel_processed.retry_level]
+                        logger.warning(f"پیشرفت: {progress_percentage:.2f}% ({processed_channels_count}/{total_channels_to_process}) - کانال '{channel_processed.url}' واکشی ناموفق بود. خطا: {channel_status_info.get('error_message', 'نامعلوم')}. (بررسی بعدی: {channel_processed.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')})")
+                        
+                    all_raw_configs_collected.extend(raw_configs)
+                    for url in new_channel_urls:
+                        all_new_channel_urls_discovered.add(url) 
+                        
+                except Exception as exc:
+                    logger.error(f"پیشرفت: {progress_percentage:.2f}% ({processed_channels_count}/{total_channels_to_process}) - کانال '{channel_processed.url}' در حین واکشی موازی با خطا مواجه شد: {exc}", exc_info=True)
+
+        logger.info(f"فاز ۱ تکمیل شد. مجموعاً {len(all_raw_configs_collected)} کانفیگ خام و {len(all_new_channel_urls_discovered)} URL کانال جدید کشف شد.")
+
+        logger.info("شروع فاز ۲: کشف کانال‌ها از تمامی کانفیگ‌های خام و اضافه کردن به لیست منابع اصلی...")
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futures_phase2 = []
+            for raw_cfg_string in all_raw_configs_collected:
+                futures_phase2.append(executor.submit(self.validator.extract_telegram_channels_from_config, raw_cfg_string))
+            
+            for future in concurrent.futures.as_completed(futures_phase2):
+                try:
+                    discovered_from_config = future.result()
+                    for new_url in discovered_from_config:
+                        all_new_channel_urls_discovered.add(new_url)
+                except Exception as exc:
+                    logger.error(f"خطا در استخراج کانال از کانفیگ خام (فاز 2): {exc}", exc_info=True)
+
+        for new_url in all_new_channel_urls_discovered:
+            self.add_new_telegram_channel(new_url)
+        logger.info(f"فاز ۲ تکمیل شد. لیست منابع اصلی اکنون شامل {len(self.config.SOURCE_URLS)} کانال است (پس از اضافه شدن موارد جدید).")
+
+        logger.info("شروع فاز ۳: پردازش و حذف دقیق تکراری‌ها (بر اساس شناسه کانونی) به صورت موازی...")
+        final_enriched_configs: List[Dict[str, str]] = []
+        
+        if not all_raw_configs_collected:
+            logger.info("هیچ کانفیگ خامی برای پردازش در فاز ۳ یافت نشد. فاز ۳ نادیده گرفته شد.")
+            logger.info("فاز ۳ تکمیل شد. مجموعاً 0 کانفیگ منحصر به فرد و غنی شده آماده توازن.")
+            return [] 
+
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor: 
+            futures = {executor.submit(self._process_single_raw_config, cfg_str): cfg_str for cfg_str in all_raw_configs_collected}
+            
+            processed_configs_count_phase3 = 0
+            if len(all_raw_configs_collected) > 0:
+                for future in concurrent.futures.as_completed(futures):
+                    processed_configs_count_phase3 += 1
+                    progress_percentage_phase3 = (processed_configs_count_phase3 / len(all_raw_configs_collected)) * 100
+                    
+                    try:
+                        enriched_config_dict = future.result()
+                        if enriched_config_dict:
+                            final_enriched_configs.append(enriched_config_dict)
+                        
+                        if processed_configs_count_phase3 % 100 == 0 or processed_configs_count_phase3 == len(all_raw_configs_collected):
+                             logger.info(f"پیشرفت فاز ۳: {progress_percentage_phase3:.2f}% ({processed_configs_count_phase3}/{len(all_raw_configs_collected)}) کانفیگ خام پردازش شد. (کانفیگ‌های منحصر به فرد تاکنون: {len(final_enriched_configs)})")
+                    except Exception as exc:
+                        logger.error(f"خطا در پردازش موازی کانفیگ خام: '{futures[future][:min(len(futures[future]), 50)]}...': {exc}", exc_info=True)
+            else:
+                logger.info("هیچ کانفیگ خامی برای پردازش در فاز ۳ یافت نشد.")
+
+        logger.info(f"فاز ۳ تکمیل شد. مجموعاً {len(final_enriched_configs)} کانفیگ منحصر به فرد و غنی شده آماده توازن.")
+
+        logger.info("شروع فاز ۴: توازن پروتکل و ذخیره خروجی‌ها...")
+        final_configs_balanced = self.balance_protocols(final_enriched_configs)
+        logger.info(f"فاز ۴ تکمیل شد. {len(final_configs_balanced)} کانفیگ نهایی پس از توازن آماده ذخیره.")
+
+        return final_configs_balanced
+
+    def _process_single_raw_config(self, raw_config_string: str) -> Optional[Dict[str, str]]:
+        """
+        **تغییر یافته**: پردازش یک کانفیگ خام (برای فاز 3).
+        این متد کاملا مستقل از شیء 'channel' است و فقط کانفیگ رشته را پردازش می‌کند.
+        """
+        if not raw_config_string:
+            logger.debug("رشته کانفیگ ورودی خالی است. نادیده گرفته شد.")
+            return None
+
+        config_string_for_processing = raw_config_string 
+        if config_string_for_processing.startswith('hy2://'):
+            config_string_for_processing = self.validator.normalize_hysteria2_protocol(config_string_for_processing)
+        elif config_string_for_processing.startswith('hy1://'):
+            config_string_for_processing = config_string_for_processing.replace('hy1://', 'hysteria://', 1) 
+            
+        flag = "🏳️"
+        country = "Unknown"
+        actual_protocol = None
+
+        found_protocol_match = False
+        
+        # این لوپ برای پیدا کردن پروتکل اصلی کانفیگ است.
+        for proto_prefix in self.config.SUPPORTED_PROTOCOLS:
+            if config_string_for_processing.startswith(proto_prefix):
+                actual_protocol = proto_prefix
+                found_protocol_match = True
+                break
+            for alias in self.config.SUPPORTED_PROTOCOLS[proto_prefix].get('aliases', []):
+                if config_string_for_processing.startswith(alias):
+                    actual_protocol = proto_prefix 
+                    config_string_for_processing = config_string_for_processing.replace(alias, proto_prefix, 1) 
+                    found_protocol_match = True
+                    break
+            if found_protocol_match:
+                break
+        
+        if not found_protocol_match:
+            logger.debug(f"پروتکل برای کانفیگ خام شناسایی نشد: '{raw_config_string[:min(len(raw_config_string), 50)]}...'. نادیده گرفته شد.")
+            return None
+
+
+        if not self.config.is_protocol_enabled(actual_protocol):
+            logger.debug(f"پروتکل '{actual_protocol}' فعال نیست. کانفیگ نادیده گرفته شد: '{config_string_for_processing[:min(len(config_string_for_processing), 50)]}...'.")
+            return None 
+        
+        if actual_protocol == "vmess://":
+            config_string_for_processing = self.validator.clean_vmess_config(config_string_for_processing)
+        elif actual_protocol == "ssr://":
+            config_string_for_processing = self.validator.clean_ssr_config(config_string_for_processing)
+        
+        clean_config = self.validator.clean_config(config_string_for_processing)
+        
+        if self.validator.validate_protocol_config(clean_config, actual_protocol):
+            canonical_id = self.validator.get_canonical_id(clean_config, actual_protocol)
+            
+            if canonical_id is None:
+                logger.debug(f"شناسه کانونی برای کانفیگ '{actual_protocol}' تولید نشد. نادیده گرفته شد: '{clean_config[:min(len(clean_config), 50)]}...'.")
+                return None
+                        
+            with self._lock: 
+                if canonical_id not in self.seen_configs:
+                    server_address = self.validator.get_server_address(clean_config, actual_protocol)
+                    if server_address:
+                        flag, country = self.get_location(server_address)
+                    
+                    self.seen_configs.add(canonical_id) 
+                    self.protocol_counts[actual_protocol] = self.protocol_counts.get(actual_protocol, 0) + 1 
+                    
+                    logger.debug(f"کانفیگ منحصر به فرد '{actual_protocol}' یافت شد: '{clean_config[:min(len(clean_config), 50)]}...' (ID: {canonical_id[:min(len(canonical_id), 20)]}...).")
+                    
+                    return {
+                        'config': clean_config, 
+                        'protocol': actual_protocol,
+                        'flag': flag,
+                        'country': country,
+                        'canonical_id': canonical_id 
+                    }
+                else:
+                    logger.debug(f"کانفیگ تکراری '{actual_protocol}' با شناسه کانونی {canonical_id[:min(len(canonical_id), 20)]}... نادیده گرفته شد: '{clean_config[:min(len(clean_config), 50)]}...'.")
+            
+        else: # این `else` مربوط به `if self.validator.validate_protocol_config`
+            logger.debug(f"اعتبارسنجی پروتکل '{actual_protocol}' برای کانفیگ '{clean_config[:min(len(clean_config), 50)]}...' ناموفق بود. نادیده گرفته شد.")
+            
+        logger.debug(f"کانفیگ '{raw_config_string[:min(len(raw_config_string), 50)]}...' با هیچ پروتکل فعال یا معتبری مطابقت نداشت یا پردازش نشد. نادیده گرفته شد.")
+        return None
+
+    def extract_date_from_message(self, message) -> Optional[datetime]:
+        """
+        تاریخ و زمان انتشار پیام را از عنصر <time> در HTML پیام تلگرام استخراج می‌کند.
+        """
+        try:
+            time_element = message.find_parent('div', class_='tgme_widget_message').find('time')
+            if time_element and 'datetime' in time_element.attrs:
+                return datetime.fromisoformat(time_element['datetime'].replace('Z', '+00:00'))
+        except Exception as e:
+            logger.debug(f"خطا در استخراج تاریخ از پیام: {str(e)}")
+            pass
+        return None
+
+    def is_config_valid(self, config_text: str, date: Optional[datetime]) -> bool:
+        """
+        بررسی می‌کند که آیا تاریخ کانفیگ به اندازه کافی جدید است (طبق MAX_CONFIG_AGE_DAYS).
+        """
+        if not date:
+            logger.debug("تاریخ کانفیگ موجود نیست، معتبر فرض می‌شود.")
+            return True
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=self.config.MAX_CONFIG_AGE_DAYS)
+        if date >= cutoff_date:
+            return True
+        else:
+            logger.debug(f"کانفیگ به دلیل قدیمی بودن تاریخ (تاریخ: {date}) نادیده گرفته شد.")
+            return False
+
+    def balance_protocols(self, configs: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """
+        کانفیگ‌ها را بر اساس پروتکل سازماندهی و متعادل می‌کند تا توزیع مناسبی داشته باشند.
+        این متد تضمین می‌کند که تعداد کانفیگ‌ها برای هر پروتکل از "max_configs" تعیین شده
+        در تنظیمات (برای آن پروتکل) تجاوز نکند.
+        """
+        logger.info("شروع توازن پروتکل‌ها...")
+        protocol_configs: Dict[str, List[Dict[str, str]]] = {p: [] for p in self.config.SUPPORTED_PROTOCOLS}
+        for config_dict in configs:
+            protocol = config_dict['protocol']
+            if protocol.startswith('hy2://'):
+                protocol = 'hysteria2://'
+            elif protocol.startswith('hy1://'):
+                protocol = 'hysteria://'
+            
+            if protocol in protocol_configs:
+                protocol_configs[protocol].append(config_dict)
+            else:
+                logger.warning(f"پروتکل '{protocol}' در لیست پروتکل‌های پشتیبانی شده برای توازن یافت نشد. ممکن است به درستی تعریف نشده باشد.")
+
+        total_configs = sum(len(configs_list) for configs_list in protocol_configs.values())
+        if total_configs == 0:
+            logger.info("هیچ کانفیگی برای توازن پروتکل وجود ندارد.")
+            return []
+            
+        balanced_configs: List[Dict[str, str]] = []
+        sorted_protocols = sorted(
+            protocol_configs.items(),
+            key=lambda x: (
+                self.config.SUPPORTED_PROTOCOLS.get(x[0], {"priority": 999})["priority"], 
+                len(x[1])
+            ),
+            reverse=True
+        )
+        logger.info(f"در حال توازن {total_configs} کانفیگ بر اساس {len(sorted_protocols)} پروتکل مرتب شده...")
+        
+        for protocol, protocol_config_list in sorted_protocols:
+            protocol_info = self.config.SUPPORTED_PROTOCOLS.get(protocol)
+            if not protocol_info:
+                logger.warning(f"اطلاعات پیکربندی برای پروتکل '{protocol}' یافت نشد، نادیده گرفته شد.")
+                continue
+
+            if len(protocol_config_list) >= protocol_info["min_configs"]:
+                num_to_add = min(
+                    protocol_info["max_configs"],  
+                    len(protocol_config_list)     
+                )
+                balanced_configs.extend(protocol_config_list[:num_to_add])
+                logger.info(f"پروتکل '{protocol}': {num_to_add} کانفیگ اضافه شد (از {len(protocol_config_list)} موجود، حداکثر مجاز: {protocol_info['max_configs']}).")
+            elif protocol_info["flexible_max"] and len(protocol_config_list) > 0:
+                balanced_configs.extend(protocol_config_list)
+                logger.info(f"پروتکل '{protocol}': {len(protocol_config_list)} کانفیگ اضافه شد (حالت flexible_max).")
+            else:
+                logger.debug(f"پروتکل '{protocol}': تعداد کانفیگ‌های کافی یافت نشد ({len(protocol_config_list)}).")
+        
+        logger.info(f"توازن پروتکل‌ها کامل شد. مجموعاً {len(balanced_configs)} کانفیگ نهایی.")
+        return balanced_configs
+
+    def run_full_pipeline(self):
+        """
+        متد اصلی برای اجرای کامل pipeline واکشی، پردازش، توازن و ذخیره کانفیگ‌ها.
+        """
+        all_raw_configs_collected: List[str] = []
+        all_new_channel_urls_discovered: Set[str] = set()
+        
+        channels_to_process = []
+        now = datetime.now(timezone.utc)
+        
+        logger.info(f"در حال فیلتر کردن کانال‌ها برای پردازش. زمان فعلی: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}.")
+        for channel in list(self.config.SOURCE_URLS):
+            if not channel.enabled:
+                logger.debug(f"کانال '{channel.url}' غیرفعال است و نادیده گرفته شد.")
+                continue
+            if channel.next_check_time and channel.next_check_time > now:
+                logger.info(f"کانال '{channel.url}' به دلیل تلاش مجدد هوشمند نادیده گرفته شد. زمان بررسی بعدی: {channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}.")
+                continue
+            channels_to_process.append(channel)
+            logger.debug(f"کانال '{channel.url}' برای پردازش انتخاب شد.")
+        
+        total_channels_to_process = len(channels_to_process)
+        if total_channels_to_process == 0:
+            logger.info("هیچ کانال فعالی برای پردازش وجود ندارد (یا همه در حالت تلاش مجدد هوشمند هستند). فرآیند واکشی به پایان رسید.")
+            return []
+
+        logger.info(f"شروع فاز ۱: واکشی موازی داده‌های خام و کشف اولیه کانال‌ها از {total_channels_to_process} کانال فعال...")
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, total_channels_to_process + 1)) as executor:
+            futures = {executor.submit(self._fetch_raw_data_for_channel, channel): channel for channel in channels_to_process}
+            
+            processed_channels_count = 0
+            for future in concurrent.futures.as_completed(futures):
+                channel_processed = futures[future]
+                processed_channels_count += 1
+                progress_percentage = (processed_channels_count / total_channels_to_process) * 100
+                
+                try:
+                    raw_configs, new_channel_urls, channel_status_info = future.result()
+                    
+                    channel_processed.metrics.total_configs = channel_status_info['total_configs_raw']
+                    
+                    if channel_status_info['success']:
+                        self.config.update_channel_stats(channel_processed, True, channel_status_info['response_time'])
+                        self.config.adjust_protocol_limits(channel_processed)
+                        channel_processed.retry_level = 0
+                        channel_processed.next_check_time = None
+                        logger.info(f"پیشرفت: {progress_percentage:.2f}% ({processed_channels_count}/{total_channels_to_process}) - کانال '{channel_processed.url}' واکشی شد. ({len(raw_configs)} کانفیگ خام، {len(new_channel_urls)} کانال جدید پیدا شد).")
+                    else:
+                        self.config.update_channel_stats(channel_processed, False, channel_status_info['response_time'])
+                        channel_processed.retry_level = min(channel_processed.retry_level + 1, self.max_retry_level)
+                        channel_processed.next_check_time = datetime.now(timezone.utc) + self.retry_intervals[channel_processed.retry_level]
+                        logger.warning(f"پیشرفت: {progress_percentage:.2f}% ({processed_channels_count}/{total_channels_to_process}) - کانال '{channel_processed.url}' واکشی ناموفق بود. خطا: {channel_status_info.get('error_message', 'نامعلوم')}. (بررسی بعدی: {channel_processed.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')})")
+                        
+                    all_raw_configs_collected.extend(raw_configs)
+                    for url in new_channel_urls:
+                        all_new_channel_urls_discovered.add(url) 
+                        
+                except Exception as exc:
+                    logger.error(f"پیشرفت: {progress_percentage:.2f}% ({processed_channels_count}/{total_channels_to_process}) - کانال '{channel_processed.url}' در حین واکشی موازی با خطا مواجه شد: {exc}", exc_info=True)
+
+        logger.info(f"فاز ۱ تکمیل شد. مجموعاً {len(all_raw_configs_collected)} کانفیگ خام و {len(all_new_channel_urls_discovered)} URL کانال جدید کشف شد.")
+
+        logger.info("شروع فاز ۲: کشف کانال‌ها از تمامی کانفیگ‌های خام و اضافه کردن به لیست منابع اصلی...")
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futures_phase2 = []
+            for raw_cfg_string in all_raw_configs_collected:
+                futures_phase2.append(executor.submit(self.validator.extract_telegram_channels_from_config, raw_cfg_string))
+            
+            for future in concurrent.futures.as_completed(futures_phase2):
+                try:
+                    discovered_from_config = future.result()
+                    for new_url in discovered_from_config:
+                        all_new_channel_urls_discovered.add(new_url)
+                except Exception as exc:
+                    logger.error(f"خطا در استخراج کانال از کانفیگ خام (فاز 2): {exc}", exc_info=True)
+
+        for new_url in all_new_channel_urls_discovered:
+            self.add_new_telegram_channel(new_url)
+        logger.info(f"فاز ۲ تکمیل شد. لیست منابع اصلی اکنون شامل {len(self.config.SOURCE_URLS)} کانال است (پس از اضافه شدن موارد جدید).")
+
+        logger.info("شروع فاز ۳: پردازش و حذف دقیق تکراری‌ها (بر اساس شناسه کانونی) به صورت موازی...")
+        final_enriched_configs: List[Dict[str, str]] = []
+        
+        if not all_raw_configs_collected:
+            logger.info("هیچ کانفیگ خامی برای پردازش در فاز ۳ یافت نشد. فاز ۳ نادیده گرفته شد.")
+            logger.info("فاز ۳ تکمیل شد. مجموعاً 0 کانفیگ منحصر به فرد و غنی شده آماده توازن.")
+            return [] 
+
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor: 
+            futures = {executor.submit(self._process_single_raw_config, cfg_str): cfg_str for cfg_str in all_raw_configs_collected}
+            
+            processed_configs_count_phase3 = 0
+            if len(all_raw_configs_collected) > 0:
+                for future in concurrent.futures.as_completed(futures):
+                    processed_configs_count_phase3 += 1
+                    progress_percentage_phase3 = (processed_configs_count_phase3 / len(all_raw_configs_collected)) * 100
+                    
+                    try:
+                        enriched_config_dict = future.result()
+                        if enriched_config_dict:
+                            final_enriched_configs.append(enriched_config_dict)
+                        
+                        if processed_configs_count_phase3 % 100 == 0 or processed_configs_count_phase3 == len(all_raw_configs_collected):
+                             logger.info(f"پیشرفت فاز ۳: {progress_percentage_phase3:.2f}% ({processed_configs_count_phase3}/{len(all_raw_configs_collected)}) کانفیگ خام پردازش شد. (کانفیگ‌های منحصر به فرد تاکنون: {len(final_enriched_configs)})")
+                    except Exception as exc:
+                        logger.error(f"خطا در پردازش موازی کانفیگ خام: '{futures[future][:min(len(futures[future]), 50)]}...': {exc}", exc_info=True)
+            else:
+                logger.info("هیچ کانفیگ خامی برای پردازش در فاز ۳ یافت نشد.")
+
+        logger.info(f"فاز ۳ تکمیل شد. مجموعاً {len(final_enriched_configs)} کانفیگ منحصر به فرد و غنی شده آماده توازن.")
+
+        logger.info("شروع فاز ۴: توازن پروتکل و ذخیره خروجی‌ها...")
+        final_configs_balanced = self.balance_protocols(final_enriched_configs)
+        logger.info(f"فاز ۴ تکمیل شد. {len(final_configs_balanced)} کانفیگ نهایی پس از توازن آماده ذخیره.")
+
+        return final_configs_balanced
+
+    def _process_single_raw_config(self, raw_config_string: str) -> Optional[Dict[str, str]]:
+        """
+        پردازش یک کانفیگ خام (برای فاز 3).
+        این متد کاملا مستقل از شیء 'channel' است و فقط کانفیگ رشته را پردازش می‌کند.
+        """
+        if not raw_config_string:
+            logger.debug("رشته کانفیگ ورودی خالی است. نادیده گرفته شد.")
+            return None
+
+        config_string_for_processing = raw_config_string 
+        if config_string_for_processing.startswith('hy2://'):
+            config_string_for_processing = self.validator.normalize_hysteria2_protocol(config_string_for_processing)
+        elif config_string_for_processing.startswith('hy1://'):
+            config_string_for_processing = config_string_for_processing.replace('hy1://', 'hysteria://', 1) 
+            
+        flag = "🏳️"
+        country = "Unknown"
+        actual_protocol = None
+
+        found_protocol_match = False
+        
+        # **تغییر یافته**: بهبود حلقه پیدا کردن پروتکل اصلی.
+        # ابتدا پروتکل را از رشته خام پیدا می‌کنیم.
+        for proto_prefix in self.config.SUPPORTED_PROTOCOLS:
+            if config_string_for_processing.startswith(proto_prefix):
+                actual_protocol = proto_prefix
+                found_protocol_match = True
+                break
+            for alias in self.config.SUPPORTED_PROTOCOLS[proto_prefix].get('aliases', []):
+                if config_string_for_processing.startswith(alias):
+                    actual_protocol = proto_prefix 
+                    # اگر از alias استفاده شد، رشته را نرمال‌سازی کنید تا در ادامه کار درست باشد
+                    config_string_for_processing = config_string_for_processing.replace(alias, proto_prefix, 1) 
+                    found_protocol_match = True
+                    break
+            if found_protocol_match:
+                break
+        
+        if not found_protocol_match:
+            logger.debug(f"پروتکل برای کانفیگ خام شناسایی نشد: '{raw_config_string[:min(len(raw_config_string), 50)]}...'. نادیده گرفته شد.")
+            return None
+
+
+        if not self.config.is_protocol_enabled(actual_protocol):
+            logger.debug(f"پروتکل '{actual_protocol}' فعال نیست. کانفیگ نادیده گرفته شد: '{config_string_for_processing[:min(len(config_string_for_processing), 50)]}...'.")
+            return None 
+        
+        if actual_protocol == "vmess://":
+            config_string_for_processing = self.validator.clean_vmess_config(config_string_for_processing)
+        elif actual_protocol == "ssr://":
+            config_string_for_processing = self.validator.clean_ssr_config(config_string_for_processing)
+        
+        clean_config = self.validator.clean_config(config_string_for_processing)
+        
+        if self.validator.validate_protocol_config(clean_config, actual_protocol):
+            canonical_id = self.validator.get_canonical_id(clean_config, actual_protocol)
+            
+            if canonical_id is None:
+                logger.debug(f"شناسه کانونی برای کانفیگ '{actual_protocol}' تولید نشد. نادیده گرفته شد: '{clean_config[:min(len(clean_config), 50)]}...'.")
+                return None
+                        
+            with self._lock: 
+                if canonical_id not in self.seen_configs:
+                    server_address = self.validator.get_server_address(clean_config, actual_protocol)
+                    if server_address:
+                        flag, country = self.get_location(server_address)
+                    
+                    self.seen_configs.add(canonical_id) 
+                    self.protocol_counts[actual_protocol] = self.protocol_counts.get(actual_protocol, 0) + 1 
+                    
+                    logger.debug(f"کانفیگ منحصر به فرد '{actual_protocol}' یافت شد: '{clean_config[:min(len(clean_config), 50)]}...' (ID: {canonical_id[:min(len(canonical_id), 20)]}...).")
+                    
+                    return {
+                        'config': clean_config, 
+                        'protocol': actual_protocol,
+                        'flag': flag,
+                        'country': country,
+                        'canonical_id': canonical_id 
+                    }
+                else:
+                    logger.debug(f"کانفیگ تکراری '{actual_protocol}' با شناسه کانونی {canonical_id[:min(len(canonical_id), 20)]}... نادیده گرفته شد: '{clean_config[:min(len(clean_config), 50)]}...'.")
+            
+        else: # این `else` مربوط به `if self.validator.validate_protocol_config`
+            logger.debug(f"اعتبارسنجی پروتکل '{actual_protocol}' برای کانفیگ '{clean_config[:min(len(clean_config), 50)]}...' ناموفق بود. نادیده گرفته شد.")
+            
         logger.debug(f"کانفیگ '{raw_config_string[:min(len(raw_config_string), 50)]}...' با هیچ پروتکل فعال یا معتبری مطابقت نداشت یا پردازش نشد. نادیده گرفته شد.")
         return None
 
@@ -1467,7 +1450,7 @@ class ConfigFetcher:
         os.makedirs(self.config.BASE64_OUTPUT_DIR, exist_ok=True)
         os.makedirs(self.config.SINGBOX_OUTPUT_DIR, exist_ok=True)
 
-        header = """//profile-title: base64:8J+RvUFub251bW91cy3wnZWP
+        header = """//profile-title: base64:8J+RvUFub255bW91cy3wnZWP
 //profile-update-interval: 1
 //subscription-userinfo: upload=0; download=0; total=10737418240000000; expire=2546249531
 //support-url: https://t.me/BXAMbot
