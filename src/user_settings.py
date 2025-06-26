@@ -211,3 +211,35 @@ ENABLED_PROTOCOLS = {
 # حداکثر عمر کانفیگ‌ها بر حسب روز.
 # کانفیگ‌های قدیمی‌تر از این مقدار نامعتبر تلقی می‌شوند.
 MAX_CONFIG_AGE_DAYS = 2
+
+
+
+# --- تنظیمات فیلترینگ پیشرفته (مرحله 4) ---
+
+# لیست کدهای کشور (ISO 3166-1 alpha-2، lowercase) که مجاز هستند.
+# اگر خالی باشد، همه کشورها مجازند مگر اینکه در BLOCKED_COUNTRIES باشند.
+# مثال: ALLOWED_COUNTRIES = ["ir", "us", "de"]
+ALLOWED_COUNTRIES: List[str] = []
+
+# لیست کدهای کشور (ISO 3166-1 alpha-2، lowercase) که مسدود هستند.
+# مثال: BLOCKED_COUNTRIES = ["cn", "ru"]
+BLOCKED_COUNTRIES: List[str] = []
+
+# لیست پروتکل‌هایی (با '://') که مجاز هستند. اگر خالی باشد، همه پروتکل‌های فعال مجازند.
+# مثال: ALLOWED_PROTOCOLS = ["vless://", "trojan://"]
+ALLOWED_PROTOCOLS: List[str] = []
+
+# لیستی از کلمات کلیدی (case-insensitive) که اگر در کانفیگ یا شناسه کانونی آن باشند، مسدود می‌شوند.
+# مثال: BLOCKED_KEYWORDS = ["mtproto", "iran", "test", "demo"]
+BLOCKED_KEYWORDS: List[str] = []
+
+# لیستی از آدرس‌های IP یا رنج‌های CIDR (مثال: "192.168.1.1" یا "10.0.0.0/24") که مسدود هستند.
+# فعلا پشتیبانی CIDR محدود است (فقط برای /24).
+# مثال: BLOCKED_IPS = ["1.2.3.4", "5.6.0.0/24"]
+BLOCKED_IPS: List[str] = []
+
+# لیستی از دامنه‌ها (case-insensitive) که مسدود هستند.
+# مثال: BLOCKED_DOMAINS = ["example.com", "bad-server.xyz"]
+BLOCKED_DOMAINS: List[str] = []
+
+
