@@ -13,14 +13,13 @@ import base64
 from config import ProxyConfig, ChannelConfig
 from config_validator import ConfigValidator
 
-# پیکربندی لاگ‌گیری (از config.py ارث می‌برد یا اینجا تنظیم می‌کند)
-# اگر در config.py تنظیم شده باشد، این خطوط ممکن است تکراری باشند اما مشکلی ایجاد نمی‌کنند.
+# پیکربندی لاگ‌گیری (بهتر است از پیکربندی مرکزی در config.py استفاده شود یا آن را اینجا گسترش داد)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('proxy_fetcher.log'), # لاگ در فایل
-        logging.StreamHandler() # لاگ در کنسول
+        logging.FileHandler('proxy_fetcher.log'),
+        logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
@@ -414,6 +413,9 @@ class ConfigFetcher:
             logger.info(f"کانال '{channel.url}' با موفقیت {len(current_channel_valid_processed_configs)} کانفیگ معتبر ارائه داد. سطح تلاش مجدد بازنشانی شد.")
         else:
             self.config.update_channel_stats(channel, False)
+            # **تغییر یافته**: اطمینان از مقداردهی next_check_time قبل از استفاده در لاگ
+            channel.retry_level = min(channel.retry_level + 1, self.max_retry_level)
+            channel.next_check_time = datetime.now(timezone.utc) + self.retry_intervals[channel.retry_level]
             logger.warning(f"تعداد کافی کانفیگ در کانال '{channel.url}' یافت نشد: {len(current_channel_valid_processed_configs)} کانفیگ. سطح تلاش مجدد به {channel.retry_level} افزایش یافت. بررسی بعدی در: {channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
         
         logger.info(f"پایان واکشی از منبع: '{channel.url}'. مجموع کانفیگ‌های معتبر و پردازش شده: {len(current_channel_valid_processed_configs)}.")
@@ -601,7 +603,7 @@ class ConfigFetcher:
             else:
                 logger.debug(f"پروتکل '{protocol}': تعداد کانفیگ‌های کافی یافت نشد ({len(protocol_config_list)}).")
         
-        logger.info(f"توازن پروتکل‌ها کامل شد. مجموعاً {len(balanced_configs)} کانفیگ نهایی پس از توازن.")
+        logger.info(f"توازن پروتکل‌ها کامل شد. مجموعاً {len(balanced_configs)} کانفیگ نهایی.")
         return balanced_configs
 
     def fetch_all_configs(self) -> List[Dict[str, str]]:
@@ -615,7 +617,7 @@ class ConfigFetcher:
         now = datetime.now(timezone.utc)
         
         logger.info(f"در حال فیلتر کردن کانال‌ها برای پردازش. زمان فعلی: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}.")
-        for channel in list(self.config.SOURCE_URLS): # ایجاد کپی برای تکرار
+        for channel in list(self.config.SOURCE_URLS):
             if not channel.enabled:
                 logger.debug(f"کانال '{channel.url}' غیرفعال است و نادیده گرفته شد.")
                 continue
