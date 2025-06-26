@@ -2,6 +2,7 @@
 
 # List of source URLs to fetch proxy configurations from.
 # Add or remove URLs as needed. All URLs in this list are automatically enabled.
+# توصیه می‌شود از URLهای معتبر و عمومی استفاده کنید تا از مسدود شدن IP خود جلوگیری شود.
 SOURCE_URLS = [
     "https://raw.githubusercontent.com/4n0nymou3/wg-config-fetcher/refs/heads/main/configs/wireguard_configs.txt",
     "https://raw.githubusercontent.com/4n0nymou3/ss-config-updater/refs/heads/main/configs.txt",
@@ -16,15 +17,12 @@ SOURCE_URLS = [
     "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/sub_3.txt",
     "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/sub_4.txt",
     "https://raw.githubusercontent.com/kayhgng/v2raykayh/refs/heads/main/kayhgngcollectorv3v2ray_ss",
-
-"https://shadowmere.xyz/api/b64sub/",
+    "https://shadowmere.xyz/api/b64sub/",
     "https://raw.githubusercontent.com/Aristaproject/AristaSub/refs/heads/main/Arista4.txt",
     "https://raw.githubusercontent.com/Aristaproject/AristaSub/refs/heads/main/Arista5.txt",
     "https://raw.githubusercontent.com/Aristaproject/AristaSub/refs/heads/main/Arista6.txt",
     "https://raw.githubusercontent.com/Aristaproject/AristaSub/refs/heads/main/Arista7.txt",
-
-"https://raw.githubusercontent.com/Aristaproject/AristaSub/refs/heads/main/Arista8.txt",
-
+    "https://raw.githubusercontent.com/Aristaproject/AristaSub/refs/heads/main/Arista8.txt",
     "https://t.me/s/shadowsocksm",
     "https://t.me/s/v2ray_alpha",
     "https://t.me/s/vlessconfig",
@@ -162,29 +160,38 @@ SOURCE_URLS = [
     "https://t.me/s/beau_vpn",
     "https://t.me/s/mitivpn",
     "https://t.me/s/mbtiuniverse"
-    # Add more URLs here if you want to include additional sources.
+    # در صورت نیاز، URLهای بیشتری را اینجا اضافه یا حذف کنید.
 ]
 
-# Set to True to fetch the maximum possible number of configurations.
-# If True, SPECIFIC_CONFIG_COUNT will be ignored.
+# True را برای واکشی حداکثر تعداد ممکن کانفیگ‌ها تنظیم کنید.
+# اگر True باشد، SPECIFIC_CONFIG_COUNT نادیده گرفته می‌شود.
 USE_MAXIMUM_POWER = False
 
-# Desired number of configurations to fetch.
-# This is used only if USE_MAXIMUM_POWER is False.
+# تعداد مورد نظر کانفیگ برای واکشی.
+# این فقط در صورتی استفاده می‌شود که USE_MAXIMUM_POWER برابر False باشد.
 SPECIFIC_CONFIG_COUNT = 300
 
-# Dictionary of protocols to enable or disable.
-# Set each protocol to True to enable, False to disable.
+# دیکشنری پروتکل‌ها برای فعال یا غیرفعال کردن.
+# هر پروتکل را روی True تنظیم کنید تا فعال شود، False برای غیرفعال کردن.
+# توجه: پروتکل‌های جدید (SSR، Mieru، Snell، Anytls، SSH، Juicity، Hysteria، WARP) به Singbox تبدیل نمی‌شوند.
 ENABLED_PROTOCOLS = {
     "wireguard://": True,
-    "hysteria2://": True,
+    "hysteria2://": True, # شامل hy2:// هم می‌شود
     "vless://": True,
     "vmess://": True,
     "ss://": True,
     "trojan://": True,
     "tuic://": True,
+    "ssr://": True,       # ShadowsocksR
+    "mieru://": True,     # Mieru
+    "snell://": True,     # Snell
+    "anytls://": True,    # Anytls
+    "ssh://": True,       # SSH
+    "juicity://": True,   # Juicity
+    "hysteria://": True,  # Hysteria 1 (شامل hy1:// هم می‌شود)
+    "warp://": True       # Cloudflare WARP
 }
 
-# Maximum age of configurations in days.
-# Configurations older than this will be considered invalid.
+# حداکثر عمر کانفیگ‌ها بر حسب روز.
+# کانفیگ‌های قدیمی‌تر از این مقدار نامعتبر تلقی می‌شوند.
 MAX_CONFIG_AGE_DAYS = 7
