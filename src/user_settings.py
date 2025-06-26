@@ -163,8 +163,6 @@ SOURCE_URLS = [
      "https://raw.githubusercontent.com/huibq/trojanlinks/refs/heads/master/links/ssr",
     "https://raw.githubusercontent.com/hiddify/hiddify-next/refs/heads/main/test.configs/warp",
     "https://raw.githubusercontent.com/ircfspace/warpsub/refs/heads/main/export/warp",
-    "https://raw.githubusercontent.com/maimengmeng/mysub/refs/heads/main/valid_content_all.txt",
-    "https://rayan-config.github.io/ng",
     "https://raw.githubusercontent.com/rayan-config/c-sub/refs/heads/main/configs/proxy.txt",
     "https://raw.githubusercontent.com/rayan-config/c-sub/refs/heads/main/configs/singbox_configs.json",
     "https://t.me/s/rayan_config",
