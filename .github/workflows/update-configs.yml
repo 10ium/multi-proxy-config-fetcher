@@ -1,78 +1,128 @@
 name: Update Proxy Configs
 
+# Define when the workflow should run
 on:
-  schedule:
-    - cron: "0 */6 * * *"
+  # **تغییر یافته**: فقط روی رویدادهای push و pull_request به برنچ 'test' اجرا شود.
+  push:
+    branches:
+      - test
+  pull_request:
+    branches:
+      - test
+  
+  # **غیرفعال شده**: اجرای زمان‌بندی شده. برای فعال کردن مجدد، دو خط زیر را از حالت کامنت خارج کنید.
+  # schedule:
+  #   - cron: "0 */6 * * *"
+  
+  # اجازه اجرای دستی از رابط کاربری GitHub را می‌دهد (از طریق دکمه "Run workflow")
   workflow_dispatch:
 
+# Permissions granted to the GITHUB_TOKEN for this workflow
 permissions:
-  contents: write
+  contents: write # Needed to commit and push changes to the repository
 
 jobs:
   update-configs:
+    # Specifies the runner environment
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout repository code
+      # Downloads the repository code to the runner
+      uses: actions/checkout@v4
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Set up Python
+        token: ${{ secrets.GITHUB_TOKEN }} # Uses the default GitHub token for repository access
+
+    - name: Set up Python environment
+      # Sets up a Python environment on the runner
       uses: actions/setup-python@v4
       with:
-        python-version: '3.x'
-    
-    - name: Install dependencies
+        python-version: '3.x' # Uses the latest Python 3.x version
+
+    - name: Install Python dependencies
+      # Installs necessary Python libraries from requirements.txt
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-    
-    - name: Create directories
+        # Ensure requirements.txt includes:
+        # requests
+        # beautifulsoup4
+        # (and any other libraries used by your scripts, e.g., for charts)
+
+    - name: Create output directories
+      # Creates the new structured output directories
       run: |
-        mkdir -p assets
-        mkdir -p configs
-    
-    - name: Run config fetcher
-      run: python src/fetch_configs.py
-      continue-on-error: true
-    
+        mkdir -p subs/text
+        mkdir -p subs/base64
+        mkdir -p subs/singbox
+        mkdir -p assets # Assuming generate_charts.py might still use this
+
+    - name: Run config fetcher script
+      # Executes the ConfigFetcher script, which fetches configs, adds flags, and saves to subs/text/ and subs/base64/
+      # Assumes ConfigFetcher.py is located at src/ConfigFetcher.py (or fetch_configs.py as in original workflow)
+      run: python src/ConfigFetcher.py # Ensure this path matches your file structure
+      continue-on-error: true # Continues workflow even if this step fails
+
     - name: Generate charts and reports
+      # Executes the script to generate charts and reports
+      # Assumes generate_charts.py is located at src/generate_charts.py
       run: python src/generate_charts.py
-      
-    - name: Convert configs to sing-box format
-      run: python src/config_to_singbox.py
-    
+      continue-on-error: true # Continues workflow even if this step fails
+
+    - name: Convert configs to Singbox format
+      # Executes the script to convert relevant configs to Singbox format and saves to subs/singbox/
+      # Assumes ConfigToSingbox.py is located at src/ConfigToSingbox.py
+      run: python src/ConfigToSingbox.py # Ensure this path matches your file structure
+      continue-on-error: true # Continues workflow even if this step fails
+
     - name: Update README timestamps and stats
+      # Updates timestamps in README files for cache busting and dynamic content
       run: |
-        timestamp=$(date +%s)
+        timestamp=$(date +%s) # Get current Unix timestamp
         
+        # Update English README
         sed -i "s/channel_stats_chart\.svg?v=[0-9]*/channel_stats_chart.svg?v=$timestamp/" README.md
         sed -i "s/performance_report\.html?v=[0-9]*/performance_report.html?v=$timestamp/" README.md
         
+        # Update Persian README
         sed -i "s/channel_stats_chart\.svg?v=[0-9]*/channel_stats_chart.svg?v=$timestamp/" README_FA.md
         sed -i "s/performance_report\.html?v=[0-9]*/performance_report.html?v=$timestamp/" README_FA.md
         
+        # Update Chinese README
         sed -i "s/channel_stats_chart\.svg?v=[0-9]*/channel_stats_chart.svg?v=$timestamp/" README_CN.md
         sed -i "s/performance_report\.html?v=[0-9]*/performance_report.html?v=$timestamp/" README_CN.md
         
+        # Update Russian README
         sed -i "s/channel_stats_chart\.svg?v=[0-9]*/channel_stats_chart.svg?v=$timestamp/" README_RU.md
         sed -i "s/performance_report\.html?v=[0-9]*/performance_report.html?v=$timestamp/" README_RU.md
-    
-    - name: Setup Git
+      continue-on-error: true # Continues workflow even if this step fails
+
+    - name: Setup Git user
+      # Configures Git user details for commits by the GitHub Actions bot
       run: |
         git config --global user.name 'github-actions[bot]'
         git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-    
+
     - name: Commit and push changes
+      # Adds, commits, and pushes the updated files to the repository
       run: |
-        git add configs/proxy_configs.txt
-        git add configs/singbox_configs.json
-        git add configs/channel_stats.json
+        # Add all generated config files from the new 'subs' directory structure
+        git add subs/text/*.txt
+        git add subs/base64/*.txt
+        git add subs/singbox/*.json
+        git add subs/channel_stats.json # Stats file is directly under 'subs'
+        
+        # Add generated chart and report assets
         git add assets/channel_stats_chart.svg
         git add assets/performance_report.html
+        
+        # Add updated README files
         git add README.md
         git add README_FA.md
         git add README_CN.md
         git add README_RU.md
+        
+        # Commit changes if any exist, otherwise, print a message
         git commit -m "Update proxy configs, stats and reports" || echo "No changes to commit"
+        # Push committed changes to the repository's default branch
         git push
