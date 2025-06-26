@@ -23,7 +23,6 @@ class ConfigProcessor:
         """
         self.config = config
         self.validator = validator
-        # self.get_location = get_location_func # این خط حذف شد
         logger.info("ConfigProcessor با موفقیت مقداردهی اولیه شد.")
 
     def process_raw_config(self, raw_config_string: str) -> Optional[Dict[str, str]]:
