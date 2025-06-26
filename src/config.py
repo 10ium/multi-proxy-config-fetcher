@@ -1,82 +1,123 @@
+# config.py
 from typing import Dict, List, Optional
 from datetime import datetime
 import re
 from urllib.parse import urlparse
 from dataclasses import dataclass
 import logging
-from math import inf
+import os 
 
+# فرض بر این است که user_settings.py در دسترس است.
+# این فایل شامل متغیرهایی مانند SOURCE_URLS، USE_MAXIMUM_POWER و ENABLED_PROTOCOLS است.
 from user_settings import SOURCE_URLS, USE_MAXIMUM_POWER, SPECIFIC_CONFIG_COUNT, ENABLED_PROTOCOLS, MAX_CONFIG_AGE_DAYS
 
+# پیکربندی لاگ‌گیری مرکزی
+# لاگ‌ها در کنسول و در فایل proxy_fetcher.log ثبت می‌شوند.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 @dataclass
 class ChannelMetrics:
-    total_configs: int = 0
-    valid_configs: int = 0
-    unique_configs: int = 0
-    avg_response_time: float = 0
-    last_success_time: Optional[datetime] = None
-    fail_count: int = 0
-    success_count: int = 0
-    overall_score: float = 0.0
-    protocol_counts: Dict[str, int] = None
+    """
+    کلاس ChannelMetrics برای نگهداری و مدیریت معیارهای عملکرد هر کانال منبع.
+    """
+    total_configs: int = 0  # تعداد کل کانفیگ‌های پیدا شده (شامل نامعتبرها و تکراری‌ها)
+    valid_configs: int = 0  # تعداد کانفیگ‌های معتبر و منحصر به فرد
+    unique_configs: int = 0 # تعداد کانفیگ‌های منحصر به فرد در سطح کلی (بین همه کانال‌ها)
+    avg_response_time: float = 0 # میانگین زمان پاسخگویی کانال
+    last_success_time: Optional[datetime] = None # آخرین زمان موفقیت‌آمیز واکشی
+    fail_count: int = 0     # تعداد دفعات شکست در واکشی
+    success_count: int = 0  # تعداد دفعات موفقیت در واکشی
+    overall_score: float = 0.0 # امتیاز کلی کانال بر اساس عملکرد
+    protocol_counts: Dict[str, int] = None # شمارش کانفیگ‌ها بر اساس پروتکل (در این کانال)
 
     def __post_init__(self):
+        # اطمینان از مقداردهی اولیه protocol_counts اگر None باشد.
         if self.protocol_counts is None:
             self.protocol_counts = {}
 
 class ChannelConfig:
+    """
+    کلاس ChannelConfig برای نگهداری پیکربندی و وضعیت یک کانال منبع خاص.
+    """
     def __init__(self, url: str):
-        self.url = self._validate_url(url)
-        self.enabled = True
-        self.metrics = ChannelMetrics()
-        self.is_telegram = bool(re.match(r'^https://t\.me/s/', self.url))
-        self.error_count = 0
-        self.last_check_time = None
+        self.url = self._validate_url(url) # اعتبارسنجی و ذخیره URL کانال
+        self.enabled = True                # وضعیت فعال/غیرفعال بودن کانال
+        self.metrics = ChannelMetrics()    # معیارهای عملکرد کانال
+        self.is_telegram = bool(re.match(r'^https://t\.me/s/', self.url)) # بررسی تلگرام بودن کانال
+        self.error_count = 0               # تعداد خطاهای متوالی (برای ردیابی)
+        self.last_check_time = None        # آخرین زمان بررسی کانال
+        self.next_check_time: Optional[datetime] = None # زمان بعدی که باید کانال بررسی شود (برای Smart Retry)
+        self.retry_level: int = 0         # سطح تلاش مجدد برای Smart Retry (0: عادی، 1: 3 روز، 2: 1 هفته و...)
         
     def _validate_url(self, url: str) -> str:
+        """
+        اعتبارسنجی فرمت URL و پروتکل آن.
+        """
         if not url or not isinstance(url, str):
-            raise ValueError("Invalid URL")
+            raise ValueError("URL نامعتبر است.")
         url = url.strip()
-        if not url.startswith(('http://', 'https://', 'ssconf://')):
-            raise ValueError("Invalid URL protocol")
+        # **تغییر یافته**: اضافه کردن تمامی پیشوندهای پروتکل‌های پشتیبانی شده برای اعتبارسنجی اولیه URL
+        valid_protocols_prefixes = (
+            'http://', 'https://', 'ssconf://', 
+            'ssr://', 'mieru://', 'snell://', 'anytls://', 'ssh://', 'juicity://',
+            'hysteria://', 'warp://', 'wireguard://', 'hysteria2://', 'vless://', 
+            'vmess://', 'ss://', 'trojan://', 'tuic://'
+        )
+        if not url.startswith(valid_protocols_prefixes):
+            raise ValueError(f"پروتکل URL نامعتبر است: {url}")
         return url
         
     def calculate_overall_score(self):
+        """
+        محاسبه امتیاز کلی کانال بر اساس قابلیت اطمینان، کیفیت، منحصر به فرد بودن و زمان پاسخگویی.
+        """
         try:
             total_attempts = max(1, self.metrics.success_count + self.metrics.fail_count)
-            reliability_score = (self.metrics.success_count / total_attempts) * 35
+            reliability_score = (self.metrics.success_count / total_attempts) * 35 # امتیاز قابلیت اطمینان (تا 35%)
             
             total_configs = max(1, self.metrics.total_configs)
-            quality_score = (self.metrics.valid_configs / total_configs) * 25
+            quality_score = (self.metrics.valid_configs / total_configs) * 25 # امتیاز کیفیت (تا 25%)
             
             valid_configs = max(1, self.metrics.valid_configs)
-            uniqueness_score = (self.metrics.unique_configs / valid_configs) * 25
+            uniqueness_score = (self.metrics.unique_configs / valid_configs) * 25 # امتیاز منحصر به فرد بودن (تا 25%)
             
-            response_score = 15
+            response_score = 15 # امتیاز زمان پاسخگویی (تا 15%)
             if self.metrics.avg_response_time > 0:
                 response_score = max(0, min(15, 15 * (1 - (self.metrics.avg_response_time / 10))))
             
             self.metrics.overall_score = round(reliability_score + quality_score + uniqueness_score + response_score, 2)
         except Exception as e:
-            logger.error(f"Error calculating score for {self.url}: {str(e)}")
+            logger.error(f"خطا در محاسبه امتیاز برای کانال '{self.url}': {str(e)}")
             self.metrics.overall_score = 0.0
 
 class ProxyConfig:
-    def __init__(self):
-        self.use_maximum_power = USE_MAXIMUM_POWER
-        self.specific_config_count = SPECIFIC_CONFIG_COUNT
-        self.MAX_CONFIG_AGE_DAYS = MAX_CONFIG_AGE_DAYS
+    """
+    کلاس ProxyConfig برای مدیریت تنظیمات و منابع کلی پراکسی.
+    """
+    def __init__(self, initial_source_urls: List[str] = None):
+        self.use_maximum_power = USE_MAXIMUM_POWER           # آیا از حداکثر قدرت واکشی استفاده شود؟
+        self.specific_config_count = SPECIFIC_CONFIG_COUNT   # تعداد کانفیگ‌های مورد نیاز در صورت عدم استفاده از حداکثر قدرت
+        self.MAX_CONFIG_AGE_DAYS = MAX_CONFIG_AGE_DAYS       # حداکثر عمر کانفیگ‌های معتبر
+        
+        # بارگذاری URLهای منبع اولیه از user_settings.py
+        if initial_source_urls is None:
+            initial_urls_list = SOURCE_URLS
+        else:
+            initial_urls_list = initial_source_urls
 
-        initial_urls = [ChannelConfig(url=url) for url in SOURCE_URLS]
-        self.SOURCE_URLS = self._remove_duplicate_urls(initial_urls)
-        self.SUPPORTED_PROTOCOLS = self._initialize_protocols()
-        self._initialize_settings()
-        self._set_smart_limits()
+        initial_channel_configs = [ChannelConfig(url=url) for url in initial_urls_list]
+        # حذف URLهای تکراری از لیست اولیه کانال‌ها
+        self.SOURCE_URLS = self._remove_duplicate_urls(initial_channel_configs) 
+        
+        self.SUPPORTED_PROTOCOLS = self._initialize_protocols() # مقداردهی اولیه پروتکل‌های پشتیبانی شده
+        self._initialize_settings()                             # مقداردهی اولیه سایر تنظیمات
+        self._set_smart_limits()                                # تنظیم محدودیت‌های هوشمند
 
     def _initialize_protocols(self) -> Dict:
+        """
+        **تغییر یافته**: تعریف تمامی پروتکل‌های پراکسی پشتیبانی شده به همراه اولویت و نام‌های مستعار.
+        """
         return {
             "wireguard://": {"priority": 1, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("wireguard://", False)},
             "hysteria2://": {"priority": 2, "aliases": ["hy2://"], "enabled": ENABLED_PROTOCOLS.get("hysteria2://", False)},
@@ -84,17 +125,36 @@ class ProxyConfig:
             "vmess://": {"priority": 1, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("vmess://", False)},
             "ss://": {"priority": 2, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("ss://", False)},
             "trojan://": {"priority": 2, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("trojan://", False)},
-            "tuic://": {"priority": 1, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("tuic://", False)}
+            "tuic://": {"priority": 1, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("tuic://", False)},
+            "ssr://": {"priority": 3, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("ssr://", False)},
+            "mieru://": {"priority": 1, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("mieru://", False)},
+            "snell://": {"priority": 2, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("snell://", False)},
+            "anytls://": {"priority": 2, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("anytls://", False)},
+            "ssh://": {"priority": 3, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("ssh://", False)},
+            "juicity://": {"priority": 1, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("juicity://", False)},
+            "hysteria://": {"priority": 1, "aliases": ["hy1://"], "enabled": ENABLED_PROTOCOLS.get("hysteria://", False)}, # Hysteria 1
+            "warp://": {"priority": 4, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("warp://", False)} # Cloudflare WARP
         }
 
     def _initialize_settings(self):
-        self.CHANNEL_RETRY_LIMIT = min(10, max(1, 5))
-        self.CHANNEL_ERROR_THRESHOLD = min(0.9, max(0.1, 0.7))
-        self.OUTPUT_FILE = 'configs/proxy_configs.txt'
-        self.STATS_FILE = 'configs/channel_stats.json'
-        self.MAX_RETRIES = min(10, max(1, 5))
-        self.RETRY_DELAY = min(60, max(5, 15))
-        self.REQUEST_TIMEOUT = min(120, max(10, 60))
+        """
+        مقداردهی اولیه تنظیمات مختلف از جمله محدودیت‌ها و مسیرهای فایل‌های خروجی.
+        """
+        self.CHANNEL_RETRY_LIMIT = min(10, max(1, 5))    # حداکثر تلاش مجدد برای یک کانال
+        self.CHANNEL_ERROR_THRESHOLD = min(0.9, max(0.1, 0.7)) # آستانه خطا برای غیرفعال کردن کانال
+        
+        # **تغییر یافته**: مسیرهای خروجی جدید برای سازماندهی بهتر فایل‌ها
+        self.OUTPUT_DIR = 'subs'                          # پوشه اصلی برای تمامی خروجی‌ها
+        self.TEXT_OUTPUT_DIR = os.path.join(self.OUTPUT_DIR, 'text') # پوشه برای فایل‌های متنی عادی
+        self.BASE64_OUTPUT_DIR = os.path.join(self.OUTPUT_DIR, 'base64') # پوشه برای فایل‌های Base64 شده
+        self.SINGBOX_OUTPUT_DIR = os.path.join(self.OUTPUT_DIR, 'singbox') # پوشه برای فایل‌های Singbox JSON
+
+        self.OUTPUT_FILE = os.path.join(self.TEXT_OUTPUT_DIR, 'proxy_configs.txt') # فایل اصلی کانفیگ‌های متنی
+        self.STATS_FILE = os.path.join(self.OUTPUT_DIR, 'channel_stats.json') # فایل آمار کانال‌ها (در پوشه اصلی subs)
+
+        self.MAX_RETRIES = min(10, max(1, 5))             # حداکثر تلاش مجدد برای درخواست‌های HTTP
+        self.RETRY_DELAY = min(60, max(5, 15))            # تاخیر بین تلاش‌های مجدد (ثانیه)
+        self.REQUEST_TIMEOUT = min(120, max(10, 60))      # مهلت زمانی برای درخواست‌های HTTP (ثانیه)
         
         self.HEADERS = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -105,98 +165,138 @@ class ProxyConfig:
         }
 
     def _set_smart_limits(self):
+        """
+        تنظیم محدودیت‌های هوشمند برای تعداد کانفیگ‌ها بر اساس حالت "حداکثر قدرت" یا "تعداد مشخص".
+        """
         if self.use_maximum_power:
             self._set_maximum_power_mode()
         else:
             self._set_specific_count_mode()
 
     def _set_maximum_power_mode(self):
-        max_configs = 10000
+        """
+        تنظیم محدودیت‌ها برای حالت "حداکثر قدرت".
+        در این حالت، سیستم سعی می‌کند تا حد ممکن کانفیگ جمع‌آوری کند.
+        """
+        max_configs = 10000 # حداکثر کانفیگ برای هر پروتکل در این حالت می‌تواند بسیار بالا باشد
         
         for protocol in self.SUPPORTED_PROTOCOLS:
             self.SUPPORTED_PROTOCOLS[protocol].update({
-                "min_configs": 1,
-                "max_configs": max_configs,
-                "flexible_max": True
+                "min_configs": 1,          # حداقل 1 کانفیگ برای هر پروتکل (اگر یافت شود)
+                "max_configs": max_configs, # حداکثر کانفیگ برای هر پروتکل در این حالت
+                "flexible_max": True       # حداکثر تعداد منعطف است (تا max_configs)
             })
         
-        self.MIN_CONFIGS_PER_CHANNEL = 1
-        self.MAX_CONFIGS_PER_CHANNEL = max_configs
-        self.MAX_RETRIES = min(10, max(1, 10))
-        self.CHANNEL_RETRY_LIMIT = min(10, max(1, 10))
-        self.REQUEST_TIMEOUT = min(120, max(30, 90))
+        self.MIN_CONFIGS_PER_CHANNEL = 1    # حداقل کانفیگ در هر کانال
+        self.MAX_CONFIGS_PER_CHANNEL = max_configs # حداکثر کانفیگ در هر کانال
+        self.MAX_RETRIES = min(10, max(1, 10)) # افزایش تلاش مجدد HTTP
+        self.CHANNEL_RETRY_LIMIT = min(10, max(1, 10)) # افزایش تلاش مجدد کانال
+        self.REQUEST_TIMEOUT = min(120, max(30, 90)) # افزایش مهلت زمانی درخواست
 
     def _set_specific_count_mode(self):
+        """
+        تنظیم محدودیت‌ها برای حالت "تعداد مشخص".
+        سیستم سعی می‌کند تعداد کانفیگ‌ها را به specific_config_count نزدیک کند.
+        """
         if self.specific_config_count <= 0:
-            self.specific_config_count = 50
+            self.specific_config_count = 50 # پیش فرض اگر عدد مشخص شده نامعتبر بود
         
         protocols_count = len(self.SUPPORTED_PROTOCOLS)
+        # توزیع تقریبی بین پروتکل ها، با حداقل 1 کانفیگ برای هر پروتکل
         base_per_protocol = max(1, self.specific_config_count // protocols_count)
         
         for protocol in self.SUPPORTED_PROTOCOLS:
             self.SUPPORTED_PROTOCOLS[protocol].update({
-                "min_configs": 1,
-                "max_configs": min(base_per_protocol * 2, 1000),
-                "flexible_max": True
+                "min_configs": 1,          # حداقل 1 کانفیگ برای هر پروتکل
+                # حداکثر کانفیگ برای هر پروتکل، دو برابر پایه یا 1000 (هر کدام کمتر بود)
+                "max_configs": min(base_per_protocol * 2, 1000), 
+                "flexible_max": True       # حداکثر تعداد منعطف است
             })
         
-        self.MIN_CONFIGS_PER_CHANNEL = 1
+        self.MIN_CONFIGS_PER_CHANNEL = 1    # حداقل کانفیگ در هر کانال
+        # حداکثر کانفیگ در هر کانال، نیمی از تعداد مشخص یا 1000 (هر کدام کمتر بود)
         self.MAX_CONFIGS_PER_CHANNEL = min(max(5, self.specific_config_count // 2), 1000)
 
     def _normalize_url(self, url: str) -> str:
+        """
+        نرمال‌سازی یک URL به فرمت یکسان برای مقایسه (برای حذف تکراری‌ها)،
+        به ویژه برای کانال‌های تلگرام.
+        """
         try:
             if not url:
-                raise ValueError("Empty URL")
+                raise ValueError("URL خالی است.")
                 
             url = url.strip()
+            # تبدیل ssconf:// به https://
             if url.startswith('ssconf://'):
                 url = url.replace('ssconf://', 'https://', 1)
                 
             parsed = urlparse(url)
+            # اگر طرح یا netloc وجود نداشت، اما با t.me/ شروع می‌شد، آن را به عنوان یک لینک تلگرام خام در نظر بگیرید
             if not parsed.scheme or not parsed.netloc:
-                raise ValueError("Invalid URL format")
+                if url.startswith('t.me/'):
+                    channel_name = url.split('/')[-1].strip('/').lower()
+                    return f"telegram:{channel_name}"
+                raise ValueError("فرمت URL نامعتبر است.")
                 
-            path = parsed.path.rstrip('/')
+            path = parsed.path.rstrip('/') # حذف اسلش اضافی از انتهای مسیر
             
-            if parsed.netloc.startswith('t.me/s/'):
+            # نرمال‌سازی خاص برای کانال‌های تلگرام (t.me/s/channelname یا t.me/channelname)
+            if parsed.netloc.startswith('t.me'):
                 channel_name = parsed.path.strip('/').lower()
+                if channel_name.startswith('s/'): # اگر t.me/s/ بود، 's/' را حذف کنید
+                    channel_name = channel_name[2:]
                 return f"telegram:{channel_name}"
                 
+            # برای سایر URLها، طرح، netloc و مسیر تمیز شده را برگردانید
             return f"{parsed.scheme}://{parsed.netloc}{path}"
         except Exception as e:
-            logger.error(f"URL normalization error: {str(e)}")
+            logger.error(f"خطا در نرمال‌سازی URL برای '{url}': {str(e)}")
             raise
 
     def _remove_duplicate_urls(self, channel_configs: List[ChannelConfig]) -> List[ChannelConfig]:
+        """
+        حذف URLهای تکراری کانال از لیست اولیه بر اساس URLهای نرمال شده.
+        """
         try:
-            seen_urls = {}
-            unique_configs = []
+            seen_normalized_urls = {} # دیکشنری برای نگهداری URLهای نرمال شده دیده شده
+            unique_configs = []      # لیست کانفیگ‌های منحصر به فرد
             
-            for config in channel_configs:
-                if not isinstance(config, ChannelConfig):
-                    logger.warning(f"Invalid config skipped: {config}")
+            for config_item in channel_configs:
+                # اطمینان از اینکه آیتم یک شیء ChannelConfig است
+                if not isinstance(config_item, ChannelConfig):
+                    logger.warning(f"کانفیگ نامعتبر نادیده گرفته شد: {config_item}")
                     continue
                     
                 try:
-                    normalized_url = self._normalize_url(config.url)
-                    if normalized_url not in seen_urls:
-                        seen_urls[normalized_url] = True
-                        unique_configs.append(config)
-                except Exception:
+                    normalized_url = self._normalize_url(config_item.url) # نرمال‌سازی URL
+                    if normalized_url not in seen_normalized_urls:
+                        seen_normalized_urls[normalized_url] = True
+                        unique_configs.append(config_item)
+                    else:
+                        logger.debug(f"URL تکراری یافت شد و حذف شد: '{config_item.url}' (نرمال شده: {normalized_url})")
+                except ValueError as ve:
+                    logger.warning(f"URL کانال نامعتبر در هنگام حذف تکراری‌ها نادیده گرفته شد: '{config_item.url}' - {str(ve)}")
+                except Exception as e:
+                    logger.error(f"خطای ناشناخته در هنگام نرمال‌سازی URL در حذف تکراری‌ها: '{config_item.url}' - {str(e)}")
                     continue
             
             if not unique_configs:
+                # اگر هیچ کانال معتبری یافت نشد، فایل کانفیگ خروجی را خالی ایجاد کنید.
                 self.save_empty_config_file()
-                logger.error("No valid sources found. Empty config file created.")
+                logger.error("هیچ منبع معتبری یافت نشد. فایل کانفیگ خالی ایجاد شد.")
                 return []
                 
             return unique_configs
         except Exception as e:
-            logger.error(f"Error removing duplicate URLs: {str(e)}")
+            logger.error(f"خطا در حذف URLهای تکراری: {str(e)}")
             self.save_empty_config_file()
             return []
 
     def is_protocol_enabled(self, protocol: str) -> bool:
+        """
+        بررسی می‌کند که آیا یک پروتکل (یا نام مستعار آن) در پیکربندی فعال است یا خیر.
+        """
         try:
             if not protocol:
                 return False
@@ -211,22 +311,31 @@ class ProxyConfig:
                     return info.get("enabled", False)
                     
             return False
-        except Exception:
+        except Exception as e:
+            logger.debug(f"خطا در بررسی فعال بودن پروتکل '{protocol}': {str(e)}")
             return False
 
     def get_enabled_channels(self) -> List[ChannelConfig]:
+        """
+        یک لیست از اشیاء ChannelConfig فعال فعلی را برمی‌گرداند.
+        """
         channels = [channel for channel in self.SOURCE_URLS if channel.enabled]
         if not channels:
-            self.save_empty_config_file()
-            logger.error("No enabled channels found. Empty config file created.")
+            logger.warning("هیچ کانال فعالی یافت نشد.")
         return channels
 
     def update_channel_stats(self, channel: ChannelConfig, success: bool, response_time: float = 0):
+        """
+        آمارهای یک کانال معین را بر اساس موفقیت عملیات واکشی آن به‌روز می‌کند.
+        همچنین امتیاز کلی را محاسبه می‌کند و در صورت لزوم کانال را غیرفعال می‌کند.
+        """
         if success:
             channel.metrics.success_count += 1
             channel.metrics.last_success_time = datetime.now()
+            channel.error_count = 0 # بازنشانی شمارنده خطا در صورت موفقیت
         else:
             channel.metrics.fail_count += 1
+            channel.error_count += 1 # افزایش شمارنده خطاهای متوالی
         
         if response_time > 0:
             if channel.metrics.avg_response_time == 0:
@@ -237,13 +346,18 @@ class ProxyConfig:
         channel.calculate_overall_score()
         
         if channel.metrics.overall_score < 25:
-            channel.enabled = False
-        
-        if not any(c.enabled for c in self.SOURCE_URLS):
-            self.save_empty_config_file()
-            logger.error("All channels are disabled. Empty config file created.")
+            if channel.enabled:
+                channel.enabled = False
+                logger.warning(f"کانال '{channel.url}' به دلیل امتیاز کلی پایین ({channel.metrics.overall_score}) غیرفعال شد.")
+        elif not channel.enabled and channel.metrics.overall_score >= 50:
+            channel.enabled = True
+            logger.info(f"کانال '{channel.url}' به دلیل بهبود امتیاز کلی ({channel.metrics.overall_score}) دوباره فعال شد.")
 
     def adjust_protocol_limits(self, channel: ChannelConfig):
+        """
+        محدودیت‌های خاص پروتکل را بر اساس تعداد واقعی کانفیگ‌های یافت شده در یک کانال
+        هنگامی که در حالت حداکثر قدرت نیست، تنظیم می‌کند.
+        """
         if self.use_maximum_power:
             return
             
@@ -257,9 +371,15 @@ class ProxyConfig:
                     )
 
     def save_empty_config_file(self) -> bool:
+        """
+        یک فایل پیکربندی خروجی خالی در مسیر مشخص شده ایجاد می‌کند.
+        """
         try:
+            os.makedirs(os.path.dirname(self.OUTPUT_FILE), exist_ok=True)
             with open(self.OUTPUT_FILE, 'w', encoding='utf-8') as f:
                 f.write("")
             return True
-        except Exception:
+        except Exception as e:
+            logger.error(f"خطا در ایجاد فایل کانفیگ خالی: {str(e)}")
             return False
+
