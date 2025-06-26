@@ -25,7 +25,7 @@ class ConfigFilter:
         self.validator = validator
         logger.info("ConfigFilter با موفقیت مقداردهی اولیه شد.")
 
-    def _match_keyword(self, text: str, keywords: List[str]) -> bool:
+    def _match_keyword(self, text: str, keywords: list[str]) -> bool: # Changed to list[str]
         """بررسی می‌کند که آیا متن شامل هر یک از کلمات کلیدی است یا خیر (case-insensitive)."""
         if not keywords:
             return False
@@ -44,13 +44,11 @@ class ConfigFilter:
             # import ipaddress
             # return ipaddress.ip_address(ip_address) in ipaddress.ip_network(ip_range)
 
-            # پیاده‌سازی ساده برای IPهای دقیق و CIDR های /24
+            # پیاده‌سازی ساده برای IPهای دقیق و CIDR های /24 و /16
             if '/' in ip_range:
                 range_ip, cidr_prefix_str = ip_range.split('/')
                 cidr_prefix = int(cidr_prefix_str)
                 
-                # برای سادگی فعلا فقط /24 و /16 را هندل می‌کنیم،
-                # برای CIDR کامل نیاز به تبدیل به باینری یا استفاده از ipaddress است.
                 if cidr_prefix == 24: # مثلاً 192.168.1.0/24
                     return ip_address.startswith(range_ip.rsplit('.', 1)[0] + '.')
                 elif cidr_prefix == 16: # مثلاً 192.168.0.0/16
@@ -69,14 +67,14 @@ class ConfigFilter:
 
 
     def filter_configs(self, 
-                       configs: List[Dict[str, str]], 
-                       allowed_countries: Optional[List[str]] = None,
-                       blocked_countries: Optional[List[str]] = None,
-                       allowed_protocols: Optional[List[str]] = None,
-                       blocked_keywords: Optional[List[str]] = None,
-                       blocked_ips: Optional[List[str]] = None,
-                       blocked_domains: Optional[List[str]] = None
-                      ) -> List[Dict[str, str]]:
+                       configs: list[Dict[str, str]], # Changed to list[Dict[str, str]]
+                       allowed_countries: Optional[list[str]] = None, # Changed to list[str]
+                       blocked_countries: Optional[list[str]] = None, # Changed to list[str]
+                       allowed_protocols: Optional[list[str]] = None, # Changed to list[str]
+                       blocked_keywords: Optional[list[str]] = None, # Changed to list[str]
+                       blocked_ips: Optional[list[str]] = None, # Changed to list[str]
+                       blocked_domains: Optional[list[str]] = None # Changed to list[str]
+                      ) -> list[Dict[str, str]]: # Changed to list[Dict[str, str]]
         """
         لیست کانفیگ‌ها را بر اساس معیارهای فیلترینگ مشخص شده فیلتر می‌کند.
         
@@ -88,7 +86,7 @@ class ConfigFilter:
         blocked_ips: لیستی از آدرس‌های IP یا رنج‌های CIDR که مسدود هستند.
         blocked_domains: لیستی از دامنه‌ها که مسدود هستند.
         """
-        filtered_list: List[Dict[str, str]] = []
+        filtered_list: list[Dict[str, str]] = [] # Changed to list[Dict[str, str]]
         
         # پیش‌پردازش لیست‌ها برای جستجوی کارآمدتر
         allowed_countries_lower = {c.lower() for c in (allowed_countries or [])}
