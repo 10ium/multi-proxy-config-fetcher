@@ -6,20 +6,24 @@ import logging
 import socket 
 import requests
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Optional, Set, Tuple 
+from typing import List, Dict, Optional, Set, Tuple, Any # اضافه شدن Any
 from bs4 import BeautifulSoup
 import base64 
+
+# اضافه شدن برای همزمانی
+import concurrent.futures
+import threading
 
 from config import ProxyConfig, ChannelConfig
 from config_validator import ConfigValidator
 
-# پیکربندی لاگ‌گیری (بهتر است از پیکربندی مرکزی در config.py استفاده شود یا آن را اینجا گسترش داد)
+# پیکربندی لاگ‌گیری (از config.py ارث می‌برد یا اینجا تنظیم می‌کند)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.INFO, # سطح پیش‌فرض لاگ‌گیری: INFO. پیام‌های DEBUG نمایش داده نمی‌شوند.
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('proxy_fetcher.log'),
-        logging.StreamHandler()
+        logging.FileHandler('proxy_fetcher.log'), # لاگ در فایل
+        logging.StreamHandler() # لاگ در کنسول
     ]
 )
 logger = logging.getLogger(__name__)
@@ -37,13 +41,17 @@ class ConfigFetcher:
         self.config = config
         self.validator = ConfigValidator()
         self.protocol_counts: Dict[str, int] = {p: 0 for p in config.SUPPORTED_PROTOCOLS}
-        self.seen_configs: Set[str] = set() # مجموعه‌ای برای نگهداری تمام کانفیگ‌های منحصر به فرد دیده شده
+        # **تغییر یافته**: seen_configs حالا شناسه‌های کانونی را ذخیره می‌کند
+        self.seen_configs: Set[str] = set() 
         self.channel_protocol_counts: Dict[str, Dict[str, int]] = {} 
         self.session = requests.Session() # استفاده از Session برای بهره‌وری بهتر درخواست‌های HTTP
         self.session.headers.update(config.HEADERS) # تنظیم هدرهای پیش‌فرض برای Session
 
         # کش برای ذخیره موقعیت جغرافیایی IPها برای افزایش سرعت و جلوگیری از محدودیت‌ها
         self.ip_location_cache: Dict[str, Tuple[str, str]] = {} 
+
+        # **جدید**: قفل برای محافظت از منابع مشترک در عملیات همزمان
+        self._lock = threading.Lock() 
 
         # بازه‌های زمانی برای Smart Retry (تلاش مجدد هوشمند)
         self.retry_intervals = [
@@ -55,7 +63,33 @@ class ConfigFetcher:
             timedelta(days=240)
         ]
         self.max_retry_level = len(self.retry_intervals) - 1 # حداکثر سطح تلاش مجدد
+        
+        # URLهای کانال‌های بارگذاری شده از user_settings.py (برای مقایسه با موارد کشف شده جدید)
+        self.initial_user_settings_urls: Set[str] = {self.config._normalize_url(url) for url in SOURCE_URLS}
+        # URLهای کانال‌های موجود در stats.json قبلی (برای تشخیص کانال‌های "جدید کشف شده")
+        self.previous_stats_urls: Set[str] = set()
+        self._load_previous_stats_urls() # بارگذاری URLها از stats.json قبلی
+        
         logger.info("مقداردهی اولیه ConfigFetcher با موفقیت انجام شد.")
+
+    # **جدید**: بارگذاری URLها از channel_stats.json قبلی
+    def _load_previous_stats_urls(self):
+        """
+        بارگذاری URLهای کانال از channel_stats.json قبلی برای تشخیص کانال‌های جدید.
+        """
+        stats_file_path = os.path.join(self.config.OUTPUT_DIR, 'channel_stats.json')
+        if os.path.exists(stats_file_path):
+            try:
+                with open(stats_file_path, 'r', encoding='utf-8') as f:
+                    stats_data = json.load(f)
+                for channel_data in stats_data.get('channels', []):
+                    try:
+                        self.previous_stats_urls.add(self.config._normalize_url(channel_data['url']))
+                    except ValueError as e:
+                        logger.warning(f"URL نامعتبر در stats.json قبلی یافت شد و نادیده گرفته شد: {channel_data.get('url', 'نامعلوم')} - {str(e)}")
+                logger.debug(f"{len(self.previous_stats_urls)} URL از stats.json قبلی بارگذاری شد.")
+            except Exception as e:
+                logger.warning(f"خطا در بارگذاری URLها از stats.json قبلی: {str(e)}")
 
     # --- متدهای دریافت موقعیت جغرافیایی IP (منتقل شده از ConfigToSingbox) ---
     def _get_location_from_ip_api(self, ip: str) -> Tuple[str, str]:
@@ -109,8 +143,7 @@ class ConfigFetcher:
     def _get_location_from_abstractapi(self, ip: str) -> Tuple[str, str]:
         """دریافت موقعیت جغرافیایی از ipgeolocation.abstractapi.com (نیاز به کلید API واقعی دارد)"""
         try:
-            response = requests.get(f'https://ipgeolocation.abstractapi.com/v1/?api_key=test&ip_address={ip}', 
-                                  headers=self.session.headers, timeout=5)
+            response = requests.get(f'https://ipgeolocation.abstractapi.com/v1/?api_key=test', headers=self.session.headers, timeout=5)
             if response.status_code == 200:
                 data = response.json()
                 if data.get('country_code') and data.get('country'):
@@ -133,9 +166,10 @@ class ConfigFetcher:
             ip = socket.gethostbyname(address)
             
             # بررسی کش
-            if ip in self.ip_location_cache:
-                logger.debug(f"موقعیت IP '{ip}' از کش بازیابی شد.")
-                return self.ip_location_cache[ip]
+            with self._lock: # استفاده از قفل برای دسترسی ایمن به کش
+                if ip in self.ip_location_cache:
+                    logger.debug(f"موقعیت IP '{ip}' از کش بازیابی شد.")
+                    return self.ip_location_cache[ip]
 
             apis = [
                 self._get_location_from_ip_api,
@@ -149,17 +183,20 @@ class ConfigFetcher:
                 country_code, country = api_func(ip)
                 if country_code and country and len(country_code) == 2:
                     flag = ''.join(chr(ord('🇦') + ord(c.upper()) - ord('A')) for c in country_code)
-                    self.ip_location_cache[ip] = (flag, country) # ذخیره در کش
+                    with self._lock: # استفاده از قفل برای دسترسی ایمن به کش
+                        self.ip_location_cache[ip] = (flag, country) # ذخیره در کش
                     logger.debug(f"موقعیت IP '{ip}' از API {api_func.__name__} دریافت شد: {flag} {country}")
                     return flag, country
                 
         except socket.gaierror:
-            logger.warning(f"نام میزبان قابل حل نیست: '{address}'. موقعیت 'نامشخص' خواهد بود.")
+            # **تغییر یافته**: سطح لاگ از WARNING به DEBUG تغییر یافت تا خروجی شلوغ نشود.
+            logger.debug(f"نام میزبان قابل حل نیست: '{address}'. موقعیت 'نامشخص' خواهد بود.") 
         except Exception as e:
             logger.error(f"خطای کلی در دریافت موقعیت برای '{address}': {str(e)}")
             
         # ذخیره در کش حتی اگر ناموفق بود تا از تلاش‌های بعدی برای همین آدرس جلوگیری شود.
-        self.ip_location_cache[address] = ("🏳️", "Unknown") 
+        with self._lock: # استفاده از قفل برای دسترسی ایمن به کش
+            self.ip_location_cache[address] = ("🏳️", "Unknown") 
         return "🏳️", "Unknown"
     # --- پایان متدهای دریافت موقعیت جغرافیایی IP ---
 
@@ -248,18 +285,19 @@ class ConfigFetcher:
         یک کانال تلگرام جدید را (در صورت عدم وجود) به لیست منابع اضافه می‌کند.
         """
         is_new_channel = True
-        for existing_channel in self.config.SOURCE_URLS:
-            if self.config._normalize_url(existing_channel.url) == self.config._normalize_url(new_channel_url):
-                is_new_channel = False
-                break
-        
-        if is_new_channel:
-            try:
-                new_channel_config = ChannelConfig(url=new_channel_url)
-                self.config.SOURCE_URLS.append(new_channel_config)
-                logger.info(f"کانال تلگرام جدید به صورت پویا اضافه شد: '{new_channel_url}'.")
-            except ValueError as e:
-                logger.warning(f"URL کانال تلگرام نامعتبر پیدا شد و نادیده گرفته شد: '{new_channel_url}' - {e}")
+        with self._lock: # محافظت از دسترسی به self.config.SOURCE_URLS
+            for existing_channel in self.config.SOURCE_URLS:
+                if self.config._normalize_url(existing_channel.url) == self.config._normalize_url(new_channel_url):
+                    is_new_channel = False
+                    break
+            
+            if is_new_channel:
+                try:
+                    new_channel_config = ChannelConfig(url=new_channel_url)
+                    self.config.SOURCE_URLS.append(new_channel_config)
+                    logger.info(f"کانال تلگرام جدید به صورت پویا اضافه شد: '{new_channel_url}'.")
+                except ValueError as e:
+                    logger.warning(f"URL کانال تلگرام نامعتبر پیدا شد و نادیده گرفته شد: '{new_channel_url}' - {e}")
 
 
     def fetch_configs_from_source(self, channel: ChannelConfig) -> List[Dict[str, str]]:
@@ -413,10 +451,9 @@ class ConfigFetcher:
             logger.info(f"کانال '{channel.url}' با موفقیت {len(current_channel_valid_processed_configs)} کانفیگ معتبر ارائه داد. سطح تلاش مجدد بازنشانی شد.")
         else:
             self.config.update_channel_stats(channel, False)
-            # **تغییر یافته**: اطمینان از مقداردهی next_check_time قبل از استفاده در لاگ
             channel.retry_level = min(channel.retry_level + 1, self.max_retry_level)
             channel.next_check_time = datetime.now(timezone.utc) + self.retry_intervals[channel.retry_level]
-            logger.warning(f"تعداد کافی کانفیگ در کانال '{channel.url}' یافت نشد: {len(current_channel_valid_processed_configs)} کانفیگ. سطح تلاش مجدد به {channel.retry_level} افزایش یافت. بررسی بعدی در: {channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            logger.warning(f"تعداد کافی کانفیگ در کانال '{channel.url}' یافت نشد: {len(current_channel_valid_processed_configs)} کانفیگ. سطح تلاش مجدد به {channel.retry_level} افزایش یافت. بررسی بعدی در: {channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}. ")
         
         logger.info(f"پایان واکشی از منبع: '{channel.url}'. مجموع کانفیگ‌های معتبر و پردازش شده: {len(current_channel_valid_processed_configs)}.")
         return current_channel_valid_processed_configs
@@ -461,7 +498,7 @@ class ConfigFetcher:
                 for alias in aliases:
                     if config_string.startswith(alias):
                         protocol_match = True
-                        config_string = config_string.replace(alias, protocol_prefix, 1) # جایگزینی alias با پروتکل اصلی
+                        config_string = config_string.replace(alias, protocol_prefix, 1) # جایگزیسی alias با پروتکل اصلی
                         actual_protocol = protocol_prefix
                         break
                         
@@ -484,38 +521,47 @@ class ConfigFetcher:
                 
                 # اعتبارسنجی نهایی و دقیق پروتکل خاص
                 if self.validator.validate_protocol_config(clean_config, actual_protocol):
-                    # کانفیگ معتبر است، در حال دریافت آدرس سرور و موقعیت جغرافیایی
-                    server_address = self.validator.get_server_address(clean_config, actual_protocol)
-                    if server_address:
-                        flag, country = self.get_location(server_address)
-                        logger.debug(f"موقعیت برای '{server_address}' یافت شد: {flag} {country}")
-                    else:
-                        logger.debug(f"آدرس سرور برای پروتکل '{actual_protocol}' از کانفیگ استخراج نشد: '{clean_config[:min(len(clean_config), 50)]}...'.")
+                    # **تغییر یافته**: دریافت شناسه کانونی برای بررسی دقیق تکراری بودن
+                    canonical_id = self.validator.get_canonical_id(clean_config, actual_protocol)
                     
-                    # به‌روزرسانی معیارهای کانال و شمارش پروتکل
-                    channel.metrics.valid_configs += 1
-                    channel.metrics.protocol_counts[actual_protocol] = channel.metrics.protocol_counts.get(actual_protocol, 0) + 1
+                    if canonical_id is None:
+                        logger.debug(f"شناسه کانونی برای کانفیگ '{actual_protocol}' تولید نشد. نادیده گرفته شد: '{clean_config[:min(len(clean_config), 50)]}...'.")
+                        return None # اگر شناسه کانونی تولید نشد، کانفیگ را نادیده بگیرید
+                        
+                    # **تغییر یافته**: بررسی منحصر به فرد بودن بر اساس شناسه کانونی
+                    if canonical_id not in self.seen_configs:
+                        # کانفیگ منحصر به فرد است، در حال دریافت آدرس سرور و موقعیت جغرافیایی
+                        server_address = self.validator.get_server_address(clean_config, actual_protocol)
+                        if server_address:
+                            flag, country = self.get_location(server_address)
+                            logger.debug(f"موقعیت برای '{server_address}' یافت شد: {flag} {country}")
+                        # **تغییر یافته**: حذف لاگ warning برای عدم یافتن پرچم
+                        # else:
+                        #     logger.debug(f"آدرس سرور برای پروتکل '{actual_protocol}' از کانفیگ استخراج نشد: '{clean_config[:min(len(clean_config), 50)]}...'.")
                     
-                    # بررسی منحصر به فرد بودن در سطح کلی (بین تمام کانال‌ها)
-                    if clean_config not in self.seen_configs:
-                        channel.metrics.unique_configs += 1
-                        self.seen_configs.add(clean_config)
+                        # به‌روزرسانی معیارهای کانال و شمارش پروتکل
+                        channel.metrics.valid_configs += 1
+                        channel.metrics.protocol_counts[actual_protocol] = channel.metrics.protocol_counts.get(actual_protocol, 0) + 1
+                        
+                        # **تغییر یافته**: افزودن canonical_id به seen_configs
+                        self.seen_configs.add(canonical_id) 
                         self.protocol_counts[actual_protocol] += 1
-                        logger.debug(f"کانفیگ منحصر به فرد '{actual_protocol}' یافت شد: '{clean_config[:min(len(clean_config), 50)]}...'")
+                        logger.debug(f"کانفیگ منحصر به فرد '{actual_protocol}' یافت شد: '{clean_config[:min(len(clean_config), 50)]}...' (ID: {canonical_id[:min(len(canonical_id), 20)]}...).")
                         
                         return {
-                            'config': clean_config,
+                            'config': clean_config, # **مهم**: رشته کامل کانفیگ اصلی را حفظ کنید
                             'protocol': actual_protocol,
                             'flag': flag,
-                            'country': country
+                            'country': country,
+                            'canonical_id': canonical_id # **جدید**: شناسه کانونی را هم برگردانید
                         }
                     else:
-                        logger.debug(f"کانفیگ تکراری '{actual_protocol}' نادیده گرفته شد: '{clean_config[:min(len(clean_config), 50)]}...'.")
+                        logger.info(f"کانفیگ تکراری '{actual_protocol}' با شناسه کانونی {canonical_id[:min(len(canonical_id), 20)]}... نادیده گرفته شد: '{clean_config[:min(len(clean_config), 50)]}...'.")
                 else:
                     logger.debug(f"اعتبارسنجی پروتکل '{actual_protocol}' برای کانفیگ '{clean_config[:min(len(clean_config), 50)]}...' ناموفق بود. نادیده گرفته شد.")
                 break # پس از یافتن یک مطابقت پروتکل و پردازش، از حلقه خارج شوید
                 
-        logger.debug(f"کانفیگ '{config_string[:min(len(config_string), 50)]}...' با هیچ پروتکل فعال یا معتبری مطابقت نداشت.")
+        logger.debug(f"کانفیگ '{config_string[:min(len(config_string), 50)]}...' با هیچ پروتکل فعال یا معتبری مطابقت نداشت. نادیده گرفته شد.")
         return None
 
     def extract_date_from_message(self, message) -> Optional[datetime]:
@@ -542,7 +588,7 @@ class ConfigFetcher:
         if date >= cutoff_date:
             return True
         else:
-            logger.debug(f"کانفیگ به دلیل قدیمی بودن تاریخ (تاریخ: {date}) نادیده گرفته شد.")
+            logger.debug(f"کانفیگ به دلیل قدیمی بودن تاریخ (تاریخ: {date}) نadیده گرفته شد.")
             return False
 
     def balance_protocols(self, configs: List[Dict[str, str]]) -> List[Dict[str, str]]:
@@ -632,60 +678,71 @@ class ConfigFetcher:
             logger.info("هیچ کانال فعالی برای پردازش وجود ندارد (یا همه در حالت تلاش مجدد هوشمند هستند). فرآیند واکشی به پایان رسید.")
             return []
 
-        logger.info(f"شروع واکشی کانفیگ‌ها از {total_channels_to_process} کانال فعال...")
-        for idx, channel in enumerate(channels_to_process, 1):
-            logger.info(f"--- [ {idx}/{total_channels_to_process} ] در حال واکشی از کانال: '{channel.url}' ---")
-            channel_configs_dicts = self.fetch_configs_from_source(channel)
-            all_configs.extend(channel_configs_dicts)
-            
-            if idx < total_channels_to_process:
-                logger.debug("مکث 2 ثانیه قبل از واکشی کانال بعدی...")
-                time.sleep(2)
+        logger.info(f"شروع واکشی کانفیگ‌ها از {total_channels_to_process} کانال فعال به صورت همزمان...")
+        
+        # **تغییر یافته**: استفاده از ThreadPoolExecutor برای واکشی موازی
+        # حداکثر 10 تاپیک (Thread) برای واکشی همزمان (قابل تنظیم بر اساس منابع سرور/شبکه)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            # ارسال هر کانال به یک Thread برای واکشی
+            # executor.map به ترتیب لیست را برمی‌گرداند، حتی اگر وظایف به صورت نامرتب کامل شوند.
+            # channel_results یک لیست از لیست‌های Dict[str, str] خواهد بود.
+            channel_results = list(executor.map(self.fetch_configs_from_source, channels_to_process))
+
+        # **تغییر یافته**: ترکیب نتایج از همه Threadها
+        for result_list in channel_results:
+            all_configs.extend(result_list)
+
 
         if all_configs:
             logger.info(f"واکشی از همه کانال‌ها تکمیل شد. مجموعاً {len(all_configs)} کانفیگ خام جمع‌آوری شد.")
-            # حذف تکراری‌ها از لیست کلی کانفیگ‌ها
-            unique_configs_set = set()
-            unique_configs_list_of_dicts = []
+            # حذف تکراری‌ها از لیست کلی کانفیگ‌ها (بر اساس Canonical ID در process_config انجام می‌شود)
+            # اما برای اطمینان نهایی و مرتب‌سازی قبل از توازن، می‌توان یکبار دیگر unique کردن را انجام داد.
+            
+            # **تغییر یافته**: Unique کردن نهایی بر اساس شناسه کانونی در اینجا
+            final_unique_configs_list = []
+            seen_canonical_ids_for_final_list = set()
             for cfg_dict in all_configs:
-                # استفاده از فقط string کانفیگ برای بررسی تکراری بودن
-                if cfg_dict['config'] not in unique_configs_set:
-                    unique_configs_set.add(cfg_dict['config'])
-                    unique_configs_list_of_dicts.append(cfg_dict)
+                # اطمینان حاصل کنید که canonical_id واقعاً در دیکشنری موجود است
+                canonical_id = cfg_dict.get('canonical_id') 
+                if canonical_id and canonical_id not in seen_canonical_ids_for_final_list:
+                    seen_canonical_ids_for_final_list.add(canonical_id)
+                    final_unique_configs_list.append(cfg_dict)
+                # اگر canonical_id وجود نداشت یا None بود، آن را نادیده بگیرید (زیرا قبلا در process_config بررسی شده است)
 
-            logger.info(f"پس از حذف تکراری‌ها، {len(unique_configs_list_of_dicts)} کانفیگ منحصر به فرد باقی ماند.")
+            logger.info(f"پس از حذف تکراری‌های نهایی، {len(final_unique_configs_list)} کانفیگ منحصر به فرد باقی ماند.")
             # مرتب سازی بر اساس رشته کانفیگ قبل از توازن برای اطمینان از خروجی ثابت
-            all_configs = self.balance_protocols(sorted(unique_configs_list_of_dicts, key=lambda x: x['config']))
+            all_configs = self.balance_protocols(sorted(final_unique_configs_list, key=lambda x: x['config']))
             logger.info(f"فرآیند واکشی و توازن کامل شد. {len(all_configs)} کانفیگ نهایی آماده ذخیره.")
             return all_configs
         else:
             logger.warning("هیچ کانفیگ معتبری پس از واکشی و پردازش یافت نشد!")
             return []
 
-def _save_base64_file(file_path: str, content: str):
-    """یک محتوا را Base64 می‌کند و در یک فایل ذخیره می‌کند."""
-    try:
-        encoded_content = base64.b64encode(content.encode('utf-8')).decode('utf-8')
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(encoded_content)
-        logger.info(f"محتوای Base64 شده در '{file_path}' ذخیره شد.")
-    except Exception as e:
-        logger.error(f"خطا در ذخیره فایل Base64 شده '{file_path}': {str(e)}")
+    # --- توابع کمکی که به متدهای کلاس تبدیل شده‌اند ---
+    def _save_base64_file(self, file_path: str, content: str):
+        """یک محتوا را Base64 می‌کند و در یک فایل ذخیره می‌کند."""
+        try:
+            encoded_content = base64.b64encode(content.encode('utf-8')).decode('utf-8')
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(encoded_content)
+            logger.info(f"محتوای Base64 شده در '{file_path}' ذخیره شد.")
+        except Exception as e:
+            logger.error(f"خطا در ذخیره فایل Base64 شده '{file_path}': {str(e)}")
 
-def save_configs(configs: List[Dict[str, str]], config: ProxyConfig):
-    """
-    ذخیره لیست نهایی کانفیگ‌ها در فایل‌های مختلف در ساختار پوشه جدید.
-    حالا کانفیگ‌ها شامل اطلاعات پرچم و کشور هستند.
-    """
-    logger.info("در حال آماده‌سازی دایرکتوری‌های خروجی برای ذخیره کانفیگ‌ها...")
-    # ایجاد پوشه‌های اصلی و فرعی برای خروجی‌های متنی و Base64
-    os.makedirs(config.TEXT_OUTPUT_DIR, exist_ok=True)
-    os.makedirs(config.BASE64_OUTPUT_DIR, exist_ok=True)
-    os.makedirs(config.SINGBOX_OUTPUT_DIR, exist_ok=True) # برای اطمینان که پوشه Singbox هم وجود دارد
+    def save_configs(self, configs: List[Dict[str, str]]):
+        """
+        ذخیره لیست نهایی کانفیگ‌ها در فایل‌های مختلف در ساختار پوشه جدید.
+        حالا کانفیگ‌ها شامل اطلاعات پرچم و کشور هستند.
+        """
+        logger.info("در حال آماده‌سازی دایرکتوری‌های خروجی برای ذخیره کانفیگ‌ها...")
+        # ایجاد پوشه‌های اصلی و فرعی برای خروجی‌های متنی و Base64
+        os.makedirs(self.config.TEXT_OUTPUT_DIR, exist_ok=True)
+        os.makedirs(self.config.BASE64_OUTPUT_DIR, exist_ok=True)
+        os.makedirs(self.config.SINGBOX_OUTPUT_DIR, exist_ok=True) # برای اطمینان که پوشه Singbox هم وجود دارد
 
-    # هدر اشتراک (Subscription Header) برای کلاینت‌های پراکسی
-    header = """//profile-title: base64:8J+RvUFub255bW91cy3wnZWP
+        # هدر اشتراک (Subscription Header) برای کلاینت‌های پراکسی
+        header = """//profile-title: base64:8J+RvUFub255bW91cy3wnZWP
 //profile-update-interval: 1
 //subscription-userinfo: upload=0; download=0; total=10737418240000000; expire=2546249531
 //support-url: https://t.me/BXAMbot
@@ -693,68 +750,191 @@ def save_configs(configs: List[Dict[str, str]], config: ProxyConfig):
 
 """
     
-    # ساخت محتوای متنی کامل با پرچم‌ها
-    full_text_lines = []
-    for cfg_dict in configs:
-        full_text_lines.append(f"{cfg_dict['flag']} {cfg_dict['country']} {cfg_dict['config']}")
-    full_text_content = header + '\n\n'.join(full_text_lines) + '\n' # اضافه کردن خط جدید در انتها
+        # ساخت محتوای متنی کامل با پرچم‌ها
+        full_text_lines = []
+        for cfg_dict in configs:
+            full_text_lines.append(f"{cfg_dict['flag']} {cfg_dict['country']} {cfg_dict['config']}")
+        full_text_content = header + '\n\n'.join(full_text_lines) + '\n' # اضافه کردن خط جدید در انتها
 
-    # --- 1. ذخیره فایل کامل (متنی) در subs/text/proxy_configs.txt ---
-    full_file_path = os.path.join(config.TEXT_OUTPUT_DIR, 'proxy_configs.txt')
-    try:
-        with open(full_file_path, 'w', encoding='utf-8') as f:
-            f.write(full_text_content)
-        logger.info(f"با موفقیت {len(configs)} کانفیگ نهایی در '{full_file_path}' ذخیره شد.")
-    except Exception as e:
-        logger.error(f"خطا در ذخیره فایل کامل کانفیگ: {str(e)}")
-
-    # --- 2. ذخیره فایل کامل (Base64) در subs/base64/proxy_configs_base64.txt ---
-    base64_full_file_path = os.path.join(config.BASE64_OUTPUT_DIR, "proxy_configs_base64.txt")
-    _save_base64_file(base64_full_file_path, full_text_content)
-
-    # --- 3. تفکیک و ذخیره بر اساس پروتکل ---
-    protocol_configs_separated: Dict[str, List[Dict[str, str]]] = {p: [] for p in config.SUPPORTED_PROTOCOLS}
-    for cfg_dict in configs:
-        protocol_full_name = cfg_dict['protocol']
-        # مطمئن شوید که پروتکل اصلی (نه alias) برای دسته‌بندی استفاده می‌شود
-        if protocol_full_name.startswith('hy2://'):
-            protocol_full_name = 'hysteria2://'
-        elif protocol_full_name.startswith('hy1://'):
-            protocol_full_name = 'hysteria://'
-        
-        if protocol_full_name in protocol_configs_separated:
-             protocol_configs_separated[protocol_full_name].append(cfg_dict)
-        else:
-            logger.warning(f"پروتکل '{protocol_full_name}' در لیست پروتکل‌های پشتیبانی شده برای تفکیک یافت نشد.")
-
-
-    for protocol_full_name, cfg_list_of_dicts in protocol_configs_separated.items():
-        if not cfg_list_of_dicts:
-            continue
-
-        # حذف "://" از نام پروتکل برای نام فایل
-        protocol_name = protocol_full_name.replace('://', '')
-        
-        # ساخت محتوای متنی برای پروتکل خاص با پرچم‌ها
-        protocol_text_lines = []
-        for cfg_dict in cfg_list_of_dicts:
-             protocol_text_lines.append(f"{cfg_dict['flag']} {cfg_dict['country']} {cfg_dict['config']}")
-        protocol_text_content = header + '\n\n'.join(protocol_text_lines) + '\n'
-
-        # --- 3a. ذخیره فایل متنی پروتکل خاص در subs/text/ ---
-        protocol_file_name = f"{protocol_name}.txt"
-        protocol_file_path = os.path.join(config.TEXT_OUTPUT_DIR, protocol_file_name)
+        # --- 1. ذخیره فایل کامل (متنی) در subs/text/proxy_configs.txt ---
+        full_file_path = os.path.join(self.config.TEXT_OUTPUT_DIR, 'proxy_configs.txt')
         try:
-            with open(protocol_file_path, 'w', encoding='utf-8') as f:
-                f.write(protocol_text_content)
-            logger.info(f"با موفقیت {len(cfg_list_of_dicts)} کانفیگ '{protocol_name}' در '{protocol_file_path}' ذخیره شد.")
+            with open(full_file_path, 'w', encoding='utf-8') as f:
+                f.write(full_text_content)
+            logger.info(f"با موفقیت {len(configs)} کانفیگ نهایی در '{full_file_path}' ذخیره شد.")
         except Exception as e:
-            logger.error(f"خطا در ذخیره فایل '{protocol_name}' کانفیگ: {str(e)}")
+            logger.error(f"خطا در ذخیره فایل کامل کانفیگ: {str(e)}")
 
-        # --- 3b. ذخیره فایل Base64 شده پروتکل خاص در subs/base64/ ---
-        base64_protocol_file_name = f"{protocol_name}_base64.txt"
-        base64_protocol_file_path = os.path.join(config.BASE64_OUTPUT_DIR, base64_protocol_file_name)
-        _save_base64_file(base64_protocol_file_path, protocol_text_content)
+        # --- 2. ذخیره فایل کامل (Base64) در subs/base64/proxy_configs_base64.txt ---
+        base64_full_file_path = os.path.join(self.config.BASE64_OUTPUT_DIR, "proxy_configs_base64.txt")
+        self._save_base64_file(base64_full_file_path, full_text_content)
+
+        # --- 3. تفکیک و ذخیره بر اساس پروتکل ---
+        protocol_configs_separated: Dict[str, List[Dict[str, str]]] = {p: [] for p in self.config.SUPPORTED_PROTOCOLS}
+        for cfg_dict in configs:
+            protocol_full_name = cfg_dict['protocol']
+            # مطمئن شوید که پروتکل اصلی (نه alias) برای دسته‌بندی استفاده می‌شود
+            if protocol_full_name.startswith('hy2://'):
+                protocol_full_name = 'hysteria2://'
+            elif protocol_full_name.startswith('hy1://'):
+                protocol_full_name = 'hysteria://'
+            
+            if protocol_full_name in protocol_configs_separated:
+                 protocol_configs_separated[protocol_full_name].append(cfg_dict)
+            else:
+                logger.warning(f"پروتکل '{protocol_full_name}' در لیست پروتکل‌های پشتیبانی شده برای تفکیک یافت نشد.")
+
+
+        for protocol_full_name, cfg_list_of_dicts in protocol_configs_separated.items():
+            if not cfg_list_of_dicts:
+                continue
+
+            # حذف "://" از نام پروتکل برای نام فایل
+            protocol_name = protocol_full_name.replace('://', '')
+            
+            # ساخت محتوای متنی برای پروتکل خاص با پرچم‌ها
+            protocol_text_lines = []
+            for cfg_dict in cfg_list_of_dicts:
+                 protocol_text_lines.append(f"{cfg_dict['flag']} {cfg_dict['country']} {cfg_dict['config']}")
+            protocol_text_content = header + '\n\n'.join(protocol_text_lines) + '\n'
+
+            # --- 3a. ذخیره فایل متنی پروتکل خاص در subs/text/ ---
+            protocol_file_name = f"{protocol_name}.txt"
+            protocol_file_path = os.path.join(self.config.TEXT_OUTPUT_DIR, protocol_file_name)
+            try:
+                with open(protocol_file_path, 'w', encoding='utf-8') as f:
+                    f.write(protocol_text_content)
+                logger.info(f"با موفقیت {len(cfg_list_of_dicts)} کانفیگ '{protocol_name}' در '{protocol_file_path}' ذخیره شد.")
+            except Exception as e:
+                logger.error(f"خطا در ذخیره فایل '{protocol_name}' کانفیگ: {str(e)}")
+
+            # --- 3b. ذخیره فایل Base64 شده پروتکل خاص در subs/base64/ ---
+            base64_protocol_file_name = f"{protocol_name}_base64.txt"
+            base64_protocol_file_path = os.path.join(self.config.BASE64_OUTPUT_DIR, base64_protocol_file_name)
+            self._save_base64_file(base64_protocol_file_path, protocol_text_content)
+
+    def save_channel_stats(self):
+        """
+        ذخیره آمارهای جمع‌آوری شده از کانال‌ها در فایل JSON.
+        """
+        logger.info("در حال ذخیره آمارهای کانال‌ها...")
+        try:
+            stats = {
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'channels': []
+            }
+            
+            for channel in self.config.SOURCE_URLS: # حالا شامل کانال‌های جدید اضافه شده هم می‌شود
+                channel_stats = {
+                    'url': channel.url,
+                    'enabled': channel.enabled,
+                    'metrics': {
+                        'total_configs': channel.metrics.total_configs,
+                        'valid_configs': channel.metrics.valid_configs,
+                        'unique_configs': channel.metrics.unique_configs,
+                        'avg_response_time': round(channel.metrics.avg_response_time, 2),
+                        'success_count': channel.metrics.success_count,
+                        'fail_count': channel.metrics.fail_count,
+                        'overall_score': round(channel.metrics.overall_score, 2),
+                        'last_success': channel.metrics.last_success_time.replace(tzinfo=timezone.utc).isoformat() if channel.metrics.last_success_time else None,
+                        'protocol_counts': channel.metrics.protocol_counts
+                    },
+                    'retry_level': channel.retry_level,
+                    'next_check': channel.next_check_time.isoformat() if channel.next_check_time else None
+                }
+                stats['channels'].append(channel_stats)
+                
+            os.makedirs(os.path.dirname(self.config.STATS_FILE), exist_ok=True)
+            with open(self.config.STATS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(stats, f, indent=2, ensure_ascii=False)
+                
+            logger.info(f"آمار کانال در '{self.config.STATS_FILE}' ذخیره شد.")
+        except Exception as e:
+            logger.error(f"خطا در ذخیره آمارهای کانال: {str(e)}")
+
+    def generate_channel_status_report(self):
+        """
+        گزارشی از وضعیت فعلی تمامی کانال‌های منبع (شامل کشف شده‌ها) ایجاد و ذخیره می‌کند.
+        کانال‌ها بر اساس امتیاز کلی مرتب شده و موارد جدید مشخص می‌شوند.
+        """
+        logger.info("در حال تولید گزارش وضعیت کانال‌ها...")
+        report_file_path = os.path.join(self.config.OUTPUT_DIR, 'channel_status_report.md')
+        
+        report_content = [
+            f"# گزارش وضعیت کانال‌های پراکسی ({datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')})",
+            "",
+            "این گزارش خلاصه‌ای از وضعیت آخرین واکشی برای هر کانال منبع است. این فایل به صورت خودکار تولید می‌شود.",
+            "",
+            "## وضعیت کلی کانال‌ها",
+            ""
+        ]
+
+        # کپی از لیست کانال‌ها برای مرتب‌سازی بدون تغییر لیست اصلی
+        channels_for_report = list(self.config.SOURCE_URLS)
+
+        # تقسیم کانال‌ها به دو گروه: موجود/پردازش شده و جدید کشف شده
+        processed_channels = []
+        newly_discovered_channels = []
+        
+        for channel in channels_for_report:
+            normalized_url = self.config._normalize_url(channel.url)
+            # یک کانال "جدید کشف شده" است اگر:
+            # 1. در user_settings.py اولیه نبوده باشد.
+            # 2. در channel_stats.json قبلی هم نبوده باشد.
+            is_newly_discovered_current_run = normalized_url not in self.initial_user_settings_urls and \
+                                             normalized_url not in self.previous_stats_urls
+            
+            if is_newly_discovered_current_run:
+                newly_discovered_channels.append(channel)
+            else:
+                processed_channels.append(channel)
+
+        # مرتب‌سازی کانال‌های موجود/پردازش شده بر اساس امتیاز کلی (نزولی: بهترین‌ها بالا)
+        processed_channels.sort(key=lambda c: c.metrics.overall_score, reverse=True)
+        
+        # مرتب‌سازی کانال‌های جدید کشف شده بر اساس URL برای ترتیب ثابت
+        newly_discovered_channels.sort(key=lambda c: c.url)
+
+        # ترکیب لیست‌ها: ابتدا پردازش شده‌ها (مرتب شده), سپس جدید کشف شده‌ها
+        sorted_channels_for_report = processed_channels + newly_discovered_channels
+
+        for channel in sorted_channels_for_report:
+            normalized_url = self.config._normalize_url(channel.url)
+            is_newly_discovered_current_run = normalized_url not in self.initial_user_settings_urls and \
+                                             normalized_url not in self.previous_stats_urls
+
+            status_line = f"- **URL**: `{channel.url}`"
+            if is_newly_discovered_current_run:
+                status_line += " **(جدید کشف شده در این اجرا!)**"
+            
+            status_line += f"\n  - **فعال**: {'✅ بله' if channel.enabled else '❌ خیر'}"
+            status_line += f"\n  - **آخرین امتیاز**: `{channel.metrics.overall_score:.2f}`"
+            status_line += f"\n  - **وضعیت واکشی**: موفق: `{channel.metrics.success_count}` | ناموفق: `{channel.metrics.fail_count}`"
+            status_line += f"\n  - **کانفیگ‌های معتبر (آخرین واکشی)**: `{channel.metrics.valid_configs}`"
+            
+            # نمایش تعداد کانفیگ‌ها بر اساس پروتکل
+            protocol_counts_str = ", ".join([f"{p.replace('://', '')}: {count}" for p, count in channel.metrics.protocol_counts.items() if count > 0])
+            if protocol_counts_str:
+                status_line += f"\n  - **پروتکل‌های موجود**: {protocol_counts_str}"
+            else:
+                status_line += f"\n  - **پروتکل‌های موجود**: (هیچ)"
+
+            # وضعیت Smart Retry
+            if channel.next_check_time:
+                status_line += f"\n  - **تلاش مجدد هوشمند**: سطح `{channel.retry_level}` | بررسی بعدی: `{channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}`"
+            else:
+                status_line += f"\n  - **تلاش مجدد هوشمند**: عادی (بازنشانی شده)"
+
+            report_content.append(status_line)
+            report_content.append("") # خط خالی برای خوانایی بیشتر
+
+        try:
+            os.makedirs(os.path.dirname(report_file_path), exist_ok=True)
+            with open(report_file_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(report_content))
+            logger.info(f"گزارش وضعیت کانال‌ها با موفقیت در '{report_file_path}' ذخیره شد.")
+        except Exception as e:
+            logger.error(f"خطا در ذخیره گزارش وضعیت کانال‌ها: {str(e)}")
 
 
 def main():
@@ -769,7 +949,7 @@ def main():
         configs = fetcher.fetch_all_configs() # واکشی و پردازش تمامی کانفیگ‌ها
         
         if configs:
-            save_configs(configs, config) # ذخیره کانفیگ‌های نهایی در فایل‌ها
+            fetcher.save_configs(configs) # فراخوانی save_configs به عنوان متد
             logger.info(f"فرآیند با موفقیت در {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')} به پایان رسید. مجموعاً {len(configs)} کانفیگ پردازش شد.")
             
             logger.info("تعداد کانفیگ‌ها بر اساس پروتکل:")
@@ -778,8 +958,10 @@ def main():
         else:
             logger.error("هیچ کانفیگ معتبری یافت نشد و هیچ فایلی تولید نشد!")
             
-        save_channel_stats(config) # آمار کانال‌ها همیشه باید ذخیره شود
+        fetcher.save_channel_stats() # فراخوانی save_channel_stats به عنوان متد
         logger.info("آمار کانال‌ها ذخیره شد.")
+
+        fetcher.generate_channel_status_report() # فراخوانی generate_channel_status_report به عنوان متد
             
     except Exception as e:
         logger.critical(f"خطای بحرانی در اجرای اصلی: {str(e)}", exc_info=True) # exc_info=True برای نمایش traceback
