@@ -19,8 +19,10 @@ from source_fetcher import SourceFetcher
 from config_processor import ConfigProcessor 
 from deduplicator import Deduplicator 
 from connection_tester import ConnectionTester 
-from output_manager import OutputManager # <--- وارد کردن OutputManager جدید
-from user_settings import SOURCE_URLS, SPECIFIC_CONFIG_COUNT 
+from output_manager import OutputManager 
+from config_filter import ConfigFilter # <--- وارد کردن ConfigFilter جدید
+from user_settings import SOURCE_URLS, SPECIFIC_CONFIG_COUNT, BLOCKED_KEYWORDS, BLOCKED_IPS, BLOCKED_DOMAINS # <--- اضافه کردن تنظیمات فیلترینگ
+from user_settings import ALLOWED_COUNTRIES, BLOCKED_COUNTRIES, ALLOWED_PROTOCOLS # <--- اضافه کردن تنظیمات فیلترینگ
 
 # پیکربندی لاگ‌گیری (سطح پیش‌فرض INFO. برای دیدن جزئیات بیشتر به logging.DEBUG تغییر دهید.)
 logging.basicConfig(
@@ -49,7 +51,8 @@ class ConfigFetcher:
         self.deduplicator = Deduplicator() 
         self.config_processor = ConfigProcessor(config, self.validator) 
         self.connection_tester = ConnectionTester(config, self.validator, self.get_location) 
-        self.output_manager = OutputManager(config) # <--- نمونه‌سازی OutputManager
+        self.output_manager = OutputManager(config) 
+        self.config_filter = ConfigFilter(config, self.validator) # <--- نمونه‌سازی ConfigFilter
         
         # شمارنده‌های کلی
         self.protocol_counts: Dict[str, int] = defaultdict(int) # تعداد نهایی کانفیگ‌های فعال هر پروتکل
@@ -260,7 +263,6 @@ class ConfigFetcher:
         )
 
         # محاسبه سایز هدف برای کل دسته، حداقل 100 یا (تعداد پروتکل‌های فعال * تعداد کانفیگ مشخص)
-        # این به ما کمک می‌کند تا مطمئن شویم در هر دسته، تعداد معقولی برای تست داریم.
         target_total_batch_size = max(self.config.specific_config_count * len([p for p in self.config.SUPPORTED_PROTOCOLS if self.config.SUPPORTED_PROTOCOLS[p]['enabled']]), 100) 
         current_batch_size = 0
         
@@ -280,14 +282,7 @@ class ConfigFetcher:
             # این می‌تواند مثلا 2 یا 3 برابر چیزی باشد که نیاز داریم تا شانس موفقیت بالا برود
             num_to_select = min(len(available_for_protocol), needed_for_protocol * batch_size_multiplier)
             
-            # اضافه کردن به دسته انتخاب شده و حذف از pool اصلی
             selected_batch.extend(available_for_protocol[:num_to_select])
-            # مهم: عناصر حذف شده باید از unique_processed_configs_pool اصلی حذف شوند
-            # یک راه بهتر این است که unique_processed_configs_pool را به یک deque تبدیل کنیم
-            # یا با استفاده از canonical_id آنها را حذف کنیم.
-            # برای سادگی، فعلاً فرض می‌کنیم این لیست موقتاً در این تابع تغییر می‌کند
-            # یا از یک کپی برای پردازش batch استفاده می‌کنیم و سپس عناصر را حذف می‌کنیم.
-            # بهترین راه: در `run_full_pipeline` بعد از انتخاب batch، آنها را از pool اصلی حذف کنیم.
             
             current_batch_size += num_to_select
             if current_batch_size >= target_total_batch_size and len(selected_batch) > 0:
@@ -479,7 +474,7 @@ class ConfigFetcher:
             
         logger.info(f"فاز ۳ تکمیل شد. مجموعاً {len(unique_processed_configs_pool)} کانفیگ منحصر به فرد (بدون پرچم/کشور) آماده تست.")
 
-        logger.info("شروع فاز ۴: تست تدریجی، فیلترینگ و غنی‌سازی (پرچم/کشور) کانفیگ‌ها به صورت موازی...")
+        logger.info("شروع فاز ۴: تست تدریجی، فیلترینگ اولیه و غنی‌سازی (پرچم/کشور) کانفیگ‌ها به صورت موازی...")
         final_tested_and_enriched_configs: List[Dict[str, str]] = []
         tested_protocol_counts: Dict[str, int] = defaultdict(int) # برای ردیابی تعداد کانفیگ‌های فعال (تست شده) برای هر پروتکل
 
@@ -506,10 +501,25 @@ class ConfigFetcher:
                     try:
                         enriched_config_dict = future_test.result()
                         if enriched_config_dict:
-                            final_tested_and_enriched_configs.append(enriched_config_dict)
-                            self.protocol_counts[enriched_config_dict['protocol']] += 1
-                            tested_protocol_counts[enriched_config_dict['protocol']] += 1
-                            logger.debug(f"کانفیگ پروتکل '{enriched_config_dict['protocol']}' با موفقیت به لیست نهایی اضافه شد. تعداد فعلی: {tested_protocol_counts[enriched_config_dict['protocol']]}/{self.config.SUPPORTED_PROTOCOLS[enriched_config_dict['protocol']]['max_configs']}")
+                            # قبل از اضافه کردن به لیست نهایی، فیلترهای پیشرفته را اعمال کن
+                            # با استفاده از تنظیمات از user_settings
+                            filtered_result = self.config_filter.filter_configs(
+                                [enriched_config_dict], # فقط یک کانفیگ را برای فیلترینگ ارسال می‌کنیم
+                                allowed_countries=ALLOWED_COUNTRIES,
+                                blocked_countries=BLOCKED_COUNTRIES,
+                                allowed_protocols=ALLOWED_PROTOCOLS,
+                                blocked_keywords=BLOCKED_KEYWORDS,
+                                blocked_ips=BLOCKED_IPS,
+                                blocked_domains=BLOCKED_DOMAINS
+                            )
+                            if filtered_result: # اگر فیلتر نشد و باقی ماند
+                                final_tested_and_enriched_configs.append(filtered_result[0]) # همان کانفیگ را اضافه کن
+                                self.protocol_counts[filtered_result[0]['protocol']] += 1
+                                tested_protocol_counts[filtered_result[0]['protocol']] += 1
+                                logger.debug(f"کانفیگ پروتکل '{filtered_result[0]['protocol']}' با موفقیت به لیست نهایی اضافه شد. تعداد فعلی: {tested_protocol_counts[filtered_result[0]['protocol']]}/{self.config.SUPPORTED_PROTOCOLS[filtered_result[0]['protocol']]['max_configs']}")
+                            else:
+                                logger.debug(f"کانفیگ '{enriched_config_dict.get('config', '')[:min(len(enriched_config_dict.get('config', '')), 50)]}...' توسط فیلتر رد شد.")
+
                     except Exception as exc_test:
                         original_cfg_data = futures_test[future_test]
                         logger.error(f"خطا در تست موازی کانفیگ: '{original_cfg_data.get('config', '')[:min(len(original_cfg_data.get('config', '')), 50)]}...': {exc_test}", exc_info=True)
@@ -521,15 +531,11 @@ class ConfigFetcher:
         # بروزرسانی آمار valid_configs و unique_configs در ChannelMetrics
         # این بخش پیچیده است زیرا پس از تکراری‌زدایی سراسری، ردیابی دقیق منبع هر کانفیگ دشوار می‌شود.
         # فعلا این مقادیر را بر اساس نتایج کلی Pipeline بروز می‌کنیم.
-        # برای دقت بیشتر در آمار هر کانال، نیاز به انتقال source_url همراه با هر raw_config_string در فاز 1/3 است.
         total_valid_configs_global = len(final_tested_and_enriched_configs)
         for channel in self.config.SOURCE_URLS:
-            channel.metrics.valid_configs = 0 # تنظیم مجدد
-            channel.metrics.unique_configs = 0 # تنظیم مجدد
-            # این باید با منطق تست شده مرتبط شود، نه فقط جمع‌آوری خام
-            # فعلا، این آمارها در سطح کلی قابل اعتمادتر هستند تا در سطح هر کانال.
+            channel.metrics.valid_configs = 0 
+            channel.metrics.unique_configs = 0 
         
-        # این شمارنده‌ها اکنون دقیقا تعداد کانفیگ‌های فعال و منحصر به فرد را نشان می‌دهند
         for protocol, count in self.protocol_counts.items():
             if protocol in self.config.SUPPORTED_PROTOCOLS:
                 self.config.SUPPORTED_PROTOCOLS[protocol]["actual_count"] = count 
@@ -539,6 +545,12 @@ class ConfigFetcher:
         logger.info(f"فاز ۵ تکمیل شد. {len(final_configs_balanced)} کانفیگ نهایی پس از توازن آماده ذخیره.")
 
         return final_configs_balanced
+
+# توابع _save_base64_file و save_configs از ConfigFetcher به OutputManager منتقل شده‌اند
+# def _save_base64_file(self, file_path: str, content: str):
+#     ...
+# def save_configs(self, configs: List[Dict[str, str]]):
+#     ...
 
 # تابع main (برای اجرا)
 def main():
@@ -550,10 +562,9 @@ def main():
         config = ProxyConfig() 
         fetcher = ConfigFetcher(config) 
 
-        final_configs = fetcher.run_full_pipeline() # نام متغیر را تغییر دادم برای وضوح بیشتر
+        final_configs = fetcher.run_full_pipeline() 
 
         if final_configs:
-            # استفاده از OutputManager برای ذخیره کانفیگ‌ها
             fetcher.output_manager.save_configs(final_configs)
             logger.info(f"فرآیند با موفقیت در {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')} به پایان رسید. مجموعاً {len(final_configs)} کانفیگ فعال و تست شده پردازش شد.")
 
@@ -563,11 +574,9 @@ def main():
         else:
             logger.error("هیچ کانفیگ فعال و معتبری یافت نشد و هیچ فایلی تولید نشد!")
 
-        # استفاده از OutputManager برای ذخیره آمار کانال‌ها
         fetcher.output_manager.save_channel_stats(fetcher.config.SOURCE_URLS, fetcher.deduplicator.get_total_unique_count())
         logger.info("آمار کانال‌ها ذخیره شد.")
 
-        # استفاده از OutputManager برای تولید گزارش
         fetcher.output_manager.generate_overall_report(fetcher.config.SOURCE_URLS, fetcher.protocol_counts)
         logger.info("گزارش وضعیت کانال‌ها تولید شد.")
 
