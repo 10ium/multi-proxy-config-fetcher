@@ -44,7 +44,8 @@ jobs:
       # Installs necessary Python libraries from requirements.txt
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        # **تغییر یافته**: مسیر requirements.txt را به src/requirements.txt تغییر دهید
+        pip install -r src/requirements.txt
 
     - name: Install Mihomo (Clash Core)
       # **جدید**: دانلود و نصب Mihomo (که قبلا Clash/Clash Premium/Clash Meta نامیده می‌شد)
@@ -73,6 +74,7 @@ jobs:
     - name: Create output directories
       # Creates the new structured output directories
       run: |
+        # این دایرکتوری‌ها در root مخزن ایجاد می‌شوند، نه در src/
         mkdir -p subs/text
         mkdir -p subs/base64
         mkdir -p subs/singbox
@@ -80,11 +82,11 @@ jobs:
 
     - name: Run Proxy Fetcher Script
       # **تغییر یافته**: اجرای اسکریپت اصلی main.py که تمام pipeline را اجرا می‌کند.
-      run: python main.py
+      # مسیر main.py را به src/main.py تغییر دهید
+      run: python src/main.py
       continue-on-error: true # Continues workflow even if this step fails
 
-    # گام‌های ConfigFetcher.py, generate_charts.py, ConfigToSingbox.py حذف شده‌اند،
-    # زیرا main.py اکنون همه این وظایف را هماهنگ می‌کند.
+    # گام‌های قدیمی که به ماژول‌های پایتون منتقل شده‌اند، حذف شده‌اند.
     # - name: Run config fetcher script
     #   run: python src/ConfigFetcher.py 
     #   continue-on-error: true 
@@ -98,12 +100,11 @@ jobs:
     #   continue-on-error: true 
     
     # توجه: اگر ConfigToSingbox.py هنوز یک اسکریپت جداگانه است و در main.py ادغام نشده،
-    # باید آن را پس از اجرای main.py (یا در داخل main.py) فراخوانی کنید.
-    # فعلاً فرض بر این است که main.py کل فرآیند را پوشش می‌دهد،
-    # اما اگر ConfigToSingbox.py مستقل باقی مانده است، باید دوباره به Workflow اضافه شود:
-    # - name: Convert configs to Singbox format (if still separate)
-    #   run: python ConfigToSingbox.py # مسیر فایل ConfigToSingbox.py را تنظیم کنید
-    #   continue-on-error: true
+    # و در مسیر 'src/' قرار دارد، باید آن را به این شکل فراخوانی کنید:
+    - name: Convert configs to Singbox format (if still separate and in src/)
+      run: python src/ConfigToSingbox.py # مسیر فایل ConfigToSingbox.py را تنظیم کنید
+      continue-on-error: true
+
 
     - name: Update README timestamps and stats
       # Updates timestamps in README files for cache busting and dynamic content
