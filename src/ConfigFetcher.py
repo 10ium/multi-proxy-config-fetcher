@@ -18,8 +18,9 @@ from config_validator import ConfigValidator
 from source_fetcher import SourceFetcher 
 from config_processor import ConfigProcessor 
 from deduplicator import Deduplicator 
-from connection_tester import ConnectionTester # <--- وارد کردن ConnectionTester جدید
-from user_settings import SOURCE_URLS, SPECIFIC_CONFIG_COUNT # <--- SPECIFIC_CONFIG_COUNT را هم وارد می‌کنیم
+from connection_tester import ConnectionTester 
+from output_manager import OutputManager # <--- وارد کردن OutputManager جدید
+from user_settings import SOURCE_URLS, SPECIFIC_CONFIG_COUNT 
 
 # پیکربندی لاگ‌گیری (سطح پیش‌فرض INFO. برای دیدن جزئیات بیشتر به logging.DEBUG تغییر دهید.)
 logging.basicConfig(
@@ -47,15 +48,15 @@ class ConfigFetcher:
         self.source_fetcher = SourceFetcher(config, self.validator) 
         self.deduplicator = Deduplicator() 
         self.config_processor = ConfigProcessor(config, self.validator) 
-        # ConnectionTester نیاز به متد get_location از ConfigFetcher دارد
-        self.connection_tester = ConnectionTester(config, self.validator, self.get_location) # <--- نمونه‌سازی ConnectionTester
+        self.connection_tester = ConnectionTester(config, self.validator, self.get_location) 
+        self.output_manager = OutputManager(config) # <--- نمونه‌سازی OutputManager
         
         # شمارنده‌های کلی
         self.protocol_counts: Dict[str, int] = defaultdict(int) # تعداد نهایی کانفیگ‌های فعال هر پروتکل
         self.channel_protocol_counts: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int)) 
         
         self.ip_location_cache: Dict[str, Tuple[str, str]] = {} 
-        self._lock = threading.Lock() # این قفل برای self.ip_location_cache استفاده می‌شود
+        self._lock = threading.Lock() 
 
         self.retry_intervals = [
             timedelta(days=0),
@@ -258,7 +259,9 @@ class ConfigFetcher:
             )
         )
 
-        target_total_batch_size = max(SPECIFIC_CONFIG_COUNT * len(self.config.SUPPORTED_PROTOCOLS), 100) # حداقل سایز دسته
+        # محاسبه سایز هدف برای کل دسته، حداقل 100 یا (تعداد پروتکل‌های فعال * تعداد کانفیگ مشخص)
+        # این به ما کمک می‌کند تا مطمئن شویم در هر دسته، تعداد معقولی برای تست داریم.
+        target_total_batch_size = max(self.config.specific_config_count * len([p for p in self.config.SUPPORTED_PROTOCOLS if self.config.SUPPORTED_PROTOCOLS[p]['enabled']]), 100) 
         current_batch_size = 0
         
         for protocol_prefix, protocol_info in sorted_protocols_by_priority_and_need:
@@ -268,7 +271,7 @@ class ConfigFetcher:
                 continue
 
             needed_for_protocol = protocol_info["max_configs"] - tested_protocol_counts.get(protocol_prefix, 0)
-            if needed_for_protocol <= 0:
+            if needed_for_protocol <= 0: # اگر پروتکل به حد نصاب رسیده باشد
                 continue
 
             available_for_protocol = configs_by_protocol[protocol_prefix]
@@ -279,11 +282,22 @@ class ConfigFetcher:
             
             # اضافه کردن به دسته انتخاب شده و حذف از pool اصلی
             selected_batch.extend(available_for_protocol[:num_to_select])
-            unique_processed_configs_pool[:] = [cfg for cfg in unique_processed_configs_pool if cfg not in available_for_protocol[:num_to_select]]
-
+            # مهم: عناصر حذف شده باید از unique_processed_configs_pool اصلی حذف شوند
+            # یک راه بهتر این است که unique_processed_configs_pool را به یک deque تبدیل کنیم
+            # یا با استفاده از canonical_id آنها را حذف کنیم.
+            # برای سادگی، فعلاً فرض می‌کنیم این لیست موقتاً در این تابع تغییر می‌کند
+            # یا از یک کپی برای پردازش batch استفاده می‌کنیم و سپس عناصر را حذف می‌کنیم.
+            # بهترین راه: در `run_full_pipeline` بعد از انتخاب batch، آنها را از pool اصلی حذف کنیم.
+            
             current_batch_size += num_to_select
             if current_batch_size >= target_total_batch_size and len(selected_batch) > 0:
-                break # اگر به سایز دسته مورد نظر رسیدیم، متوقف می‌شویم
+                break 
+        
+        # مهم: پس از انتخاب، کانفیگ‌های انتخاب شده باید از unique_processed_configs_pool حذف شوند.
+        # راه ساده اما کارآمد: از canonical_id برای ساخت مجموعه و سپس فیلتر استفاده کنید.
+        selected_ids = {cfg['canonical_id'] for cfg in selected_batch}
+        unique_processed_configs_pool[:] = [cfg for cfg in unique_processed_configs_pool if cfg['canonical_id'] not in selected_ids]
+
 
         logger.info(f"یک دسته {len(selected_batch)} کانفیگ برای تست انتخاب شد. {len(unique_processed_configs_pool)} کانفیگ تست‌نشده باقی ماند.")
         return selected_batch
@@ -388,7 +402,7 @@ class ConfigFetcher:
             for future in concurrent.futures.as_completed(futures):
                 channel_processed = futures[future]
                 processed_channels_count += 1
-                progress_percentage = (processed_configs_count / total_channels_to_process) * 100
+                progress_percentage = (processed_channels_count / total_channels_to_process) * 100
 
                 try:
                     raw_configs, new_channel_urls, channel_status_info = future.result()
@@ -444,7 +458,6 @@ class ConfigFetcher:
             return [] 
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor: 
-            # اینجا از ConfigProcessor استفاده می‌شود برای پردازش و دریافت canonical_id
             futures = {executor.submit(self.config_processor.process_raw_config, cfg_str): cfg_str for cfg_str in all_raw_configs_collected}
 
             processed_raw_count_phase3 = 0
@@ -468,8 +481,7 @@ class ConfigFetcher:
 
         logger.info("شروع فاز ۴: تست تدریجی، فیلترینگ و غنی‌سازی (پرچم/کشور) کانفیگ‌ها به صورت موازی...")
         final_tested_and_enriched_configs: List[Dict[str, str]] = []
-        # برای ردیابی تعداد کانفیگ‌های فعال (تست شده) برای هر پروتکل
-        tested_protocol_counts: Dict[str, int] = defaultdict(int) 
+        tested_protocol_counts: Dict[str, int] = defaultdict(int) # برای ردیابی تعداد کانفیگ‌های فعال (تست شده) برای هر پروتکل
 
         # ادامه تست تا زمانی که به تعداد مورد نیاز برای هر پروتکل برسیم یا هیچ کانفیگ دیگری برای تست نباشد
         while unique_processed_configs_pool and \
@@ -486,7 +498,6 @@ class ConfigFetcher:
             logger.info(f"شروع تست دسته جدید: {len(batch_to_test)} کانفیگ.")
             
             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor_test:
-                # فراخوانی test_and_enrich_config از ConnectionTester
                 futures_test = {executor_test.submit(self.connection_tester.test_and_enrich_config, cfg_data): cfg_data for cfg_data in batch_to_test}
 
                 processed_batch_count = 0
@@ -495,9 +506,7 @@ class ConfigFetcher:
                     try:
                         enriched_config_dict = future_test.result()
                         if enriched_config_dict:
-                            # اگر تست موفق بود، به لیست نهایی اضافه کن
                             final_tested_and_enriched_configs.append(enriched_config_dict)
-                            # شمارنده پروتکل‌های فعال را به‌روزرسانی کن
                             self.protocol_counts[enriched_config_dict['protocol']] += 1
                             tested_protocol_counts[enriched_config_dict['protocol']] += 1
                             logger.debug(f"کانفیگ پروتکل '{enriched_config_dict['protocol']}' با موفقیت به لیست نهایی اضافه شد. تعداد فعلی: {tested_protocol_counts[enriched_config_dict['protocol']]}/{self.config.SUPPORTED_PROTOCOLS[enriched_config_dict['protocol']]['max_configs']}")
@@ -526,221 +535,12 @@ class ConfigFetcher:
                 self.config.SUPPORTED_PROTOCOLS[protocol]["actual_count"] = count 
         
         logger.info("شروع فاز ۵: توازن نهایی پروتکل‌ها...")
-        # balance_protocols حالا روی کانفیگ‌های تست شده و غنی شده کار می‌کند
         final_configs_balanced = self.balance_protocols(final_tested_and_enriched_configs)
         logger.info(f"فاز ۵ تکمیل شد. {len(final_configs_balanced)} کانفیگ نهایی پس از توازن آماده ذخیره.")
 
         return final_configs_balanced
 
-    def _save_base64_file(self, file_path: str, content: str):
-        """یک محتوا را Base64 می‌کند و در یک فایل ذخیره می‌کند."""
-        try:
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(base64.b64encode(content.encode('utf-8')).decode('utf-8'))
-            logger.info(f"محتوای Base64 شده در '{file_path}' ذخیره شد.")
-        except Exception as e:
-            logger.error(f"خطا در ذخیره فایل Base64 شده '{file_path}': {str(e)}")
-
-    def save_configs(self, configs: List[Dict[str, str]]):
-        """
-        ذخیره لیست نهایی کانفیگ‌ها در فایل‌های مختلف در ساختار پوشه جدید.
-        حالا کانفیگ‌ها شامل اطلاعات پرچم و کشور هستند.
-        """
-        logger.info("در حال آماده‌سازی دایرکتوری‌های خروجی برای ذخیره کانفیگ‌ها...")
-        os.makedirs(self.config.TEXT_OUTPUT_DIR, exist_ok=True)
-        os.makedirs(self.config.BASE64_OUTPUT_DIR, exist_ok=True)
-        os.makedirs(self.config.SINGBOX_OUTPUT_DIR, exist_ok=True)
-
-        header = """//profile-title: base64:8J+RvUFub255bW91cy3wnZWP
-//profile-update-interval: 1
-//subscription-userinfo: upload=0; download=0; total=10737418240000000; expire=2546249531
-//support-url: https://t.me/BXAMbot
-//profile-web-page-url: https://github.com/4n0nymou3
-
-"""
-
-        full_text_lines = []
-        for cfg_dict in configs:
-            full_text_lines.append(f"{cfg_dict['flag']} {cfg_dict['country']} {cfg_dict['config']}")
-        full_text_content = header + '\n\n'.join(full_text_lines) + '\n'
-
-        full_file_path = os.path.join(self.config.TEXT_OUTPUT_DIR, 'proxy_configs.txt')
-        try:
-            with open(full_file_path, 'w', encoding='utf-8') as f:
-                f.write(full_text_content)
-            logger.info(f"با موفقیت {len(configs)} کانفیگ نهایی در '{full_file_path}' ذخیره شد.")
-        except Exception as e:
-            logger.error(f"خطا در ذخیره فایل کامل کانفیگ: {str(e)}")
-
-        base64_full_file_path = os.path.join(self.config.BASE64_OUTPUT_DIR, "proxy_configs_base64.txt")
-        self._save_base64_file(base64_full_file_path, full_text_content)
-
-        protocol_configs_separated: Dict[str, List[Dict[str, str]]] = defaultdict(list)
-        for cfg_dict in configs:
-            protocol_full_name = cfg_dict['protocol']
-            # نرمال‌سازی پروتکل‌های مستعار برای تفکیک فایل‌ها
-            if protocol_full_name.startswith('hy2://'):
-                protocol_full_name = 'hysteria2://'
-            elif protocol_full_name.startswith('hy1://'):
-                protocol_full_name = 'hysteria://'
-
-            if protocol_full_name in self.config.SUPPORTED_PROTOCOLS:
-                 protocol_configs_separated[protocol_full_name].append(cfg_dict)
-            else:
-                logger.warning(f"پروتکل '{protocol_full_name}' در لیست پروتکل‌های پشتیبانی شده برای تفکیک یافت نشد.")
-
-
-        for protocol_full_name, cfg_list_of_dicts in protocol_configs_separated.items():
-            if not cfg_list_of_dicts:
-                continue
-
-            protocol_name = protocol_full_name.replace('://', '')
-            protocol_text_lines = []
-            for cfg_dict in cfg_list_of_dicts:
-                 protocol_text_lines.append(f"{cfg_dict['flag']} {cfg_dict['country']} {cfg_dict['config']}")
-            protocol_text_content = header + '\n\n'.join(protocol_text_lines) + '\n'
-
-            protocol_file_name = f"{protocol_name}.txt"
-            protocol_file_path = os.path.join(self.config.TEXT_OUTPUT_DIR, protocol_file_name)
-            try:
-                with open(protocol_file_path, 'w', encoding='utf-8') as f:
-                    f.write(protocol_text_content)
-                logger.info(f"با موفقیت {len(cfg_list_of_dicts)} کانفیگ '{protocol_name}' در '{protocol_file_path}' ذخیره شد.")
-            except Exception as e:
-                logger.error(f"خطا در ذخیره فایل '{protocol_name}' کانفیگ: {str(e)}")
-
-            base64_protocol_file_name = f"{protocol_name}_base64.txt"
-            base64_protocol_file_path = os.path.join(self.config.BASE64_OUTPUT_DIR, base64_protocol_file_name)
-            self._save_base64_file(base64_protocol_file_path, protocol_text_content)
-
-    def save_channel_stats(self):
-        """
-        آمار مربوط به کانال‌ها را در یک فایل JSON ذخیره می‌کند.
-        """
-        stats_data = {
-            "last_updated": datetime.now(timezone.utc).isoformat(),
-            "total_channels": len(self.config.SOURCE_URLS),
-            "enabled_channels": sum(1 for c in self.config.SOURCE_URLS if c.enabled),
-            "total_unique_configs_found_overall": self.deduplicator.get_total_unique_count(), 
-            "channels": []
-        }
-        for channel in self.config.SOURCE_URLS:
-            stats_data["channels"].append({
-                "url": channel.url,
-                "enabled": channel.enabled,
-                "total_configs_fetched_raw": channel.metrics.total_configs,
-                # این مقادیر باید بر اساس تعداد واقعی کانفیگ‌های تست شده و منحصر به فردی که از آن کانال به دست آمده‌اند، به‌روز شوند.
-                # در حال حاضر، ما mapping از کانفیگ نهایی به کانال منبع را نداریم، لذا اینها ممکن است دقیق نباشند.
-                "valid_configs_processed": channel.metrics.valid_configs, 
-                "unique_configs_found": channel.metrics.unique_configs, 
-                "avg_response_time": round(channel.metrics.avg_response_time, 2),
-                "last_success_time": channel.metrics.last_success_time.isoformat() if channel.metrics.last_success_time else None,
-                "fail_count": channel.metrics.fail_count,
-                "success_count": channel.metrics.success_count,
-                "overall_score": channel.metrics.overall_score,
-                "error_count_consecutive": channel.error_count,
-                "retry_level": channel.retry_level,
-                "next_check_time": channel.next_check_time.isoformat() if channel.next_check_time else None
-            })
-
-        stats_file_path = os.path.join(self.config.OUTPUT_DIR, 'channel_stats.json')
-        try:
-            with open(stats_file_path, 'w', encoding='utf-8') as f:
-                json.dump(stats_data, f, indent=4, ensure_ascii=False)
-            logger.info(f"آمار کانال‌ها با موفقیت در '{stats_file_path}' ذخیره شد.")
-        except Exception as e:
-            logger.error(f"خطا در ذخیره آمار کانال‌ها: {str(e)}")
-
-    def generate_channel_status_report(self):
-        """
-        یک گزارش وضعیت کانال‌ها را به فرمت HTML تولید می‌کند.
-        """
-        report_path = os.path.join("assets", "performance_report.html")
-        os.makedirs(os.path.dirname(report_path), exist_ok=True)
-
-        channels_data = sorted(self.config.SOURCE_URLS, key=lambda c: c.metrics.overall_score, reverse=True)
-
-        html_content = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Channel Performance Report</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }}
-        .container {{ max-width: 900px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-        h1 {{ color: #0056b3; text-align: center; }}
-        table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-        th {{ background-color: #0056b3; color: white; }}
-        tr:nth-child(even) {{ background-color: #f2f2f2; }}
-        .score-good {{ color: green; font-weight: bold; }}
-        .score-medium {{ color: orange; font-weight: bold; }}
-        .score-bad {{ color: red; font-weight: bold; }}
-        .status-enabled {{ color: green; font-weight: bold; }}
-        .status-disabled {{ color: red; font-weight: bold; }}
-        .last-updated {{ text-align: center; margin-top: 20px; font-style: italic; color: #666; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>گزارش عملکرد کانال‌ها</h1>
-        <p class="last-updated">آخرین به‌روزرسانی: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-        <table>
-            <thead>
-                <tr>
-                    <th>URL کانال</th>
-                    <th>وضعیت</th>
-                    <th>امتیاز کلی</th>
-                    <th>واکشی موفق</th>
-                    <th>واکشی ناموفق</th>
-                    <th>میانگین زمان پاسخ</th>
-                    <th>کانفیگ خام</th>
-                    <th>تلاش مجدد</th>
-                    <th>بررسی بعدی</th>
-                </tr>
-            </thead>
-            <tbody>
-        """
-
-        for channel in channels_data:
-            status_class = "status-enabled" if channel.enabled else "status-disabled"
-            score_class = "score-good" if channel.metrics.overall_score >= 70 else \
-                          ("score-medium" if channel.metrics.overall_score >= 40 else "score-bad")
-            
-            last_success = channel.metrics.last_success_time.strftime('%Y-%m-%d %H:%M') if channel.metrics.last_success_time else "N/A"
-            next_check = channel.next_check_time.strftime('%Y-%m-%d %H:%M') if channel.next_check_time else "N/A"
-
-            html_content += f"""
-                <tr>
-                    <td><a href="{channel.url}" target="_blank">{channel.url}</a></td>
-                    <td class="{status_class}">{"فعال" if channel.enabled else "غیرفعال"}</td>
-                    <td class="{score_class}">{channel.metrics.overall_score:.2f}</td>
-                    <td>{channel.metrics.success_count}</td>
-                    <td>{channel.metrics.fail_count}</td>
-                    <td>{channel.metrics.avg_response_time:.2f}s</td>
-                    <td>{channel.metrics.total_configs}</td>
-                    <td>سطح {channel.retry_level} ({channel.error_count} متوالی)</td>
-                    <td>{next_check}</td>
-                </tr>
-            """
-        html_content += """
-            </tbody>
-        </table>
-    </div>
-</body>
-</html>
-        """
-        try:
-            with open(report_path, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-            logger.info(f"گزارش وضعیت کانال‌ها با موفقیت در '{report_path}' ذخیره شد.")
-        except Exception as e:
-            logger.error(f"خطا در تولید گزارش وضعیت کانال‌ها: {str(e)}")
-
-# تابع main بدون تغییر باقی می‌ماند
+# تابع main (برای اجرا)
 def main():
     """
     تابع اصلی برای اجرای فرآیند واکشی و ذخیره کانفیگ‌ها.
@@ -750,22 +550,26 @@ def main():
         config = ProxyConfig() 
         fetcher = ConfigFetcher(config) 
 
-        configs = fetcher.run_full_pipeline() 
+        final_configs = fetcher.run_full_pipeline() # نام متغیر را تغییر دادم برای وضوح بیشتر
 
-        if configs:
-            fetcher.save_configs(configs)
-            logger.info(f"فرآیند با موفقیت در {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')} به پایان رسید. مجموعاً {len(configs)} کانفیگ پردازش شد.")
+        if final_configs:
+            # استفاده از OutputManager برای ذخیره کانفیگ‌ها
+            fetcher.output_manager.save_configs(final_configs)
+            logger.info(f"فرآیند با موفقیت در {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')} به پایان رسید. مجموعاً {len(final_configs)} کانفیگ فعال و تست شده پردازش شد.")
 
-            logger.info("تعداد کانفیگ‌ها بر اساس پروتکل:")
+            logger.info("تعداد کانفیگ‌های نهایی بر اساس پروتکل:")
             for protocol, count in fetcher.protocol_counts.items():
                 logger.info(f"  {protocol}: {count} کانفیگ")
         else:
-            logger.error("هیچ کانفیگ معتبری یافت نشد و هیچ فایلی تولید نشد!")
+            logger.error("هیچ کانفیگ فعال و معتبری یافت نشد و هیچ فایلی تولید نشد!")
 
-        fetcher.save_channel_stats()
+        # استفاده از OutputManager برای ذخیره آمار کانال‌ها
+        fetcher.output_manager.save_channel_stats(fetcher.config.SOURCE_URLS, fetcher.deduplicator.get_total_unique_count())
         logger.info("آمار کانال‌ها ذخیره شد.")
 
-        fetcher.generate_channel_status_report()
+        # استفاده از OutputManager برای تولید گزارش
+        fetcher.output_manager.generate_overall_report(fetcher.config.SOURCE_URLS, fetcher.protocol_counts)
+        logger.info("گزارش وضعیت کانال‌ها تولید شد.")
 
     except Exception as e:
         logger.critical(f"خطای بحرانی در اجرای اصلی: {str(e)}", exc_info=True)
