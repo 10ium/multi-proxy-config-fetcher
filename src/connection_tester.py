@@ -124,7 +124,7 @@ class ConnectionTester:
             # stdout و stderr به PIPE هدایت می‌شوند تا بتوانیم لاگ‌های Mihomo را ببینیم
             process = subprocess.Popen(mihomo_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, preexec_fn=os.setsid)
             
-            # **تغییر یافته**: منتظر می‌مانیم تا پورت Mihomo باز شود
+            # منتظر می‌مانیم تا پورت Mihomo باز شود
             if not self._wait_for_port("127.0.0.1", 7890, timeout=10): # مهلت 10 ثانیه برای باز شدن پورت
                 logger.warning(f"پورت Mihomo باز نشد. تست Mihomo ناموفق برای کانفیگ: {config_string[:min(len(config_string), 50)]}...")
                 return False
@@ -186,34 +186,24 @@ class ConnectionTester:
         # 1. تست پینگ/پورت سریع
         server_address = self.validator.get_server_address(config_string, protocol)
         
-        # برخی پروتکل‌ها (مانند WARP) ممکن است آدرس سرور قابل پینگ مستقیم نداشته باشند.
-        # یا پورت آنها در URL نباشد.
-        # در این صورت، تست پینگ ممکن است نامناسب باشد.
-        # برای WARP، پورت معمولاً 80 یا 443 است، اما در URL WARP ذکر نمی‌شود.
-        # برای پروتکل‌هایی که پورت در URL نیست (مثل WARP)، باید پورت پیش‌فرض را تعیین کرد.
-        
         port = None
         try:
             parsed_url = urlparse(config_string)
             port = parsed_url.port
         except ValueError:
-            pass # ممکن است parse_url خطا دهد
+            pass 
         
-        # تعیین پورت پیش‌فرض برای پروتکل‌هایی که پورت در URL آن‌ها وجود ندارد
+        # تعیین پورت پیش‌فرض برای پروتکل‌هایی که پورت در URL نیست (مثلاً WARP)
         if not port:
             if protocol == "warp://":
-                port = 80 # یا 443 برای HTTPS
-            # می توانید پورت های پیش فرض دیگر پروتکل ها را در اینجا اضافه کنید.
-            # مثلاً 22 برای SSH اگر پورت در URL نیست
-            # یا 443 برای TLS-based protocols
+                port = 80 
             
-        if not server_address: # اگر آدرس سرور قابل استخراج نیست، تست را رد کن
+        if not server_address: 
             logger.debug(f"آدرس سرور برای کانفیگ '{config_string[:min(len(config_string), 50)]}...' یافت نشد. تست نادیده گرفته شد.")
             return None
         
         # تنها اگر پورت مشخص بود و پروتکل از نوعی بود که تست پینگ برایش معنی داشت
-        # پروتکل هایی که صرفا بر اساس پورت کار نمی کنند (مانند WARP) را از تست پینگ اولیه مستثنی کنید.
-        if port and protocol not in ["warp://"]: # WARP معمولاً تست پینگ مستقیم ندارد
+        if port and protocol not in ["warp://"]: 
             if not self._ping_test(server_address, port):
                 logger.debug(f"کانفیگ '{config_string[:min(len(config_string), 50)]}...' تست پینگ/پورت را رد کرد. نادیده گرفته شد.")
                 return None
@@ -229,17 +219,16 @@ class ConnectionTester:
             logger.debug(f"کانفیگ '{config_string[:min(len(config_string), 50)]}...' تست Mihomo را با موفقیت پشت سر گذاشت.")
         else:
             logger.debug(f"پروتکل '{protocol}' توسط Mihomo تست نمی‌شود. از تست Mihomo صرف نظر شد و معتبر فرض شد.")
-            # اگر پروتکل توسط Mihomo تست نمی‌شود، بعد از تست پینگ (در صورت انجام) آن را معتبر فرض می‌کنیم.
 
         # اگر تست‌ها (یا تست پینگ و سپس عدم نیاز به تست Mihomo) موفقیت آمیز بود، پرچم و کشور را اضافه می‌کنیم.
-        flag, country = self.get_location(server_address) # استفاده از تابع تزریق شده
+        flag, country = self.get_location(server_address) 
         
         enriched_config = {
             'config': config_string,
             'protocol': protocol,
             'flag': flag,
             'country': country,
-            'canonical_id': config_data['canonical_id'] # شناسه کانونی را حفظ می‌کنیم
+            'canonical_id': config_data['canonical_id'] 
         }
         logger.debug(f"کانفیگ '{config_string[:min(len(config_string), 50)]}...' با موفقیت تست و غنی‌سازی شد.")
         return enriched_config
