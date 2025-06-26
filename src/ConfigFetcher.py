@@ -10,8 +10,8 @@ from typing import List, Dict, Optional, Set, Tuple, Any
 from bs4 import BeautifulSoup
 import base64 
 
-import concurrent.futures # هنوز import شده ولی در fetch_all_configs استفاده نمی‌شود
-import threading # هنوز import شده ولی استفاده از Lock در fetch_all_configs موقت حذف شده
+import concurrent.futures # برای واکشی همزمان
+import threading # برای محافظت از منابع مشترک در حالت همزمان
 
 from config import ProxyConfig, ChannelConfig
 from config_validator import ConfigValidator
@@ -19,7 +19,7 @@ from user_settings import SOURCE_URLS
 
 # پیکربندی لاگ‌گیری (از config.py ارث می‌برد یا اینجا تنظیم می‌کند)
 logging.basicConfig(
-    level=logging.INFO, # سطح پیش‌فرض لاگ‌گیری: INFO. برای دیدن جزئیات بیشتر به logging.DEBUG تغییر دهید.
+    level=logging.INFO, # سطح پیش‌فرض لاگ‌گیری: INFO. پیام‌های DEBUG نمایش داده نمی‌شوند.
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('proxy_fetcher.log'), # لاگ در فایل
@@ -41,19 +41,15 @@ class ConfigFetcher:
         self.config = config
         self.validator = ConfigValidator()
         self.protocol_counts: Dict[str, int] = {p: 0 for p in config.SUPPORTED_PROTOCOLS}
-        # **تغییر یافته**: seen_configs حالا شناسه‌های کانونی را ذخیره می‌کند
         self.seen_configs: Set[str] = set() 
         self.channel_protocol_counts: Dict[str, Dict[str, int]] = {} 
-        self.session = requests.Session() # استفاده از Session برای بهره‌وری بهتر درخواست‌های HTTP
-        self.session.headers.update(config.HEADERS) # تنظیم هدرهای پیش‌فرض برای Session
+        self.session = requests.Session() 
+        self.session.headers.update(config.HEADERS) 
 
-        # کش برای ذخیره موقعیت جغرافیایی IPها برای افزایش سرعت و جلوگیری از محدودیت‌ها
         self.ip_location_cache: Dict[str, Tuple[str, str]] = {} 
 
-        # **جدید**: قفل برای محافظت از منابع مشترک (هنوز استفاده می‌شود)
         self._lock = threading.Lock() 
 
-        # بازه‌های زمانی برای Smart Retry (تلاش مجدد هوشمند)
         self.retry_intervals = [
             timedelta(days=0),
             timedelta(days=3),
@@ -62,17 +58,14 @@ class ConfigFetcher:
             timedelta(days=90),
             timedelta(days=240)
         ]
-        self.max_retry_level = len(self.retry_intervals) - 1 # حداکثر سطح تلاش مجدد
+        self.max_retry_level = len(self.retry_intervals) - 1 
         
-        # URLهای کانال‌های بارگذاری شده از user_settings.py (برای مقایسه با موارد کشف شده جدید)
         self.initial_user_settings_urls: Set[str] = {self.config._normalize_url(url) for url in SOURCE_URLS}
-        # URLهای کانال‌های موجود در stats.json قبلی (برای تشخیص کانال‌های "جدید کشف شده")
         self.previous_stats_urls: Set[str] = set()
-        self._load_previous_stats_urls() # بارگذاری URLها از stats.json قبلی
+        self._load_previous_stats_urls()
         
         logger.info("مقداردهی اولیه ConfigFetcher با موفقیت انجام شد.")
 
-    # **جدید**: بارگذاری URLها از channel_stats.json قبلی
     def _load_previous_stats_urls(self):
         """
         بارگذاری URLهای کانال از channel_stats.json قبلی برای تشخیص کانال‌های جدید.
@@ -91,8 +84,6 @@ class ConfigFetcher:
             except Exception as e:
                 logger.warning(f"خطا در بارگذاری URLها از stats.json قبلی: {str(e)}")
 
-    # --- متدهای دریافت موقعیت جغرافیایی IP ---
-    # این متدها برای جلوگیری از شلوغی لاگ‌ها، پیام‌های WARNING مربوط به حل نشدن نام میزبان را به DEBUG منتقل می‌کنند.
     def _get_location_from_ip_api(self, ip: str) -> Tuple[str, str]:
         """دریافت موقعیت جغرافیایی از ip-api.com"""
         try:
@@ -165,7 +156,7 @@ class ConfigFetcher:
         try:
             ip = socket.gethostbyname(address)
             
-            with self._lock: # محافظت از کش در برابر دسترسی همزمان
+            with self._lock: 
                 if ip in self.ip_location_cache:
                     logger.debug(f"موقعیت IP '{ip}' از کش بازیابی شد.")
                     return self.ip_location_cache[ip]
@@ -182,19 +173,17 @@ class ConfigFetcher:
                 country_code, country = api_func(ip)
                 if country_code and country and len(country_code) == 2:
                     flag = ''.join(chr(ord('🇦') + ord(c.upper()) - ord('A')) for c in country_code)
-                    with self._lock: # محافظت از کش در برابر دسترسی همزمان
+                    with self._lock: 
                         self.ip_location_cache[ip] = (flag, country)
                     logger.debug(f"موقعیت IP '{ip}' از API {api_func.__name__} دریافت شد: {flag} {country}")
                     return flag, country
                 
         except socket.gaierror:
-            # سطح لاگ از WARNING به DEBUG تغییر یافت تا خروجی شلوغ نشود.
             logger.debug(f"نام میزبان قابل حل نیست: '{address}'. موقعیت 'نامشخص' خواهد بود.") 
         except Exception as e:
             logger.error(f"خطای کلی در دریافت موقعیت برای '{address}': {str(e)}")
             
-        # ذخیره در کش حتی اگر ناموفق بود تا از تلاش‌های بعدی برای همین آدرس جلوگیری شود.
-        with self._lock: # محافظت از کش در برابر دسترسی همزمان
+        with self._lock: 
             self.ip_location_cache[address] = ("🏳️", "Unknown") 
         return "🏳️", "Unknown"
 
@@ -224,9 +213,10 @@ class ConfigFetcher:
         backoff = 1
         for attempt in range(self.config.MAX_RETRIES):
             try:
-                logger.info(f"در حال تلاش برای واکشی '{url}' (تلاش {attempt + 1}/{self.config.MAX_RETRIES})")
+                # لاگ INFO برای شروع تلاش واکشی، می‌تواند در صورت لزوم به DEBUG تغییر یابد.
+                logger.debug(f"در حال تلاش برای واکشی '{url}' (تلاش {attempt + 1}/{self.config.MAX_RETRIES})")
                 response = self.session.get(url, timeout=self.config.REQUEST_TIMEOUT)
-                response.raise_for_status() # اگر وضعیت پاسخ خطا بود، استثنا ایجاد می‌کند.
+                response.raise_for_status() 
                 return response
             except requests.RequestException as e:
                 if attempt == self.config.MAX_RETRIES - 1:
@@ -235,7 +225,7 @@ class ConfigFetcher:
                 wait_time = min(self.config.RETRY_DELAY * backoff, 60)
                 logger.warning(f"تلاش {attempt + 1} برای '{url}' ناموفق بود. تلاش مجدد در {wait_time} ثانیه: {str(e)}")
                 time.sleep(wait_time)
-                backoff *= 2 # افزایش ضریب تأخیر برای تلاش‌های بعدی
+                backoff *= 2 
         return None
 
     def fetch_ssconf_configs(self, url: str) -> List[str]:
@@ -244,7 +234,7 @@ class ConfigFetcher:
         """
         https_url = self.validator.convert_ssconf_to_https(url)
         configs = []
-        logger.info(f"در حال واکشی کانفیگ‌های ssconf از: '{https_url}'")
+        logger.debug(f"در حال واکشی کانفیگ‌های ssconf از: '{https_url}'") # تغییر سطح به DEBUG
         
         response = self.fetch_with_retry(https_url)
         if response and response.text.strip():
@@ -256,7 +246,7 @@ class ConfigFetcher:
             
             found_configs = self.validator.split_configs(text)
             configs.extend(found_configs)
-            logger.info(f"{len(found_configs)} کانفیگ از ssconf '{https_url}' یافت شد.")
+            logger.debug(f"{len(found_configs)} کانفیگ از ssconf '{https_url}' یافت شد.") # تغییر سطح به DEBUG
         else:
             logger.warning(f"هیچ محتوایی از ssconf '{https_url}' دریافت نشد یا خالی بود.")
             
@@ -283,7 +273,7 @@ class ConfigFetcher:
         یک کانال تلگرام جدید را (در صورت عدم وجود) به لیست منابع اضافه می‌کند.
         """
         is_new_channel = True
-        with self._lock: # محافظت از دسترسی به self.config.SOURCE_URLS
+        with self._lock: 
             for existing_channel in self.config.SOURCE_URLS:
                 if self.config._normalize_url(existing_channel.url) == self.config._normalize_url(new_channel_url):
                     is_new_channel = False
@@ -303,7 +293,7 @@ class ConfigFetcher:
         واکشی کانفیگ‌ها از یک کانال منبع مشخص (تلگرام یا وب‌سایت).
         قابلیت‌ها: شناسایی لینک‌های کانال تلگرام از پیام‌ها و از مشخصات کانفیگ‌ها.
         """
-        logger.info(f"شروع واکشی از منبع: '{channel.url}'")
+        # لاگ INFO شروع واکشی از منبع در fetch_all_configs اتفاق می‌افتد
         current_channel_valid_processed_configs: List[Dict[str, str]] = []
         
         channel.metrics.total_configs = 0
@@ -328,12 +318,13 @@ class ConfigFetcher:
                 self.config.update_channel_stats(channel, True, response_time)
                 channel.retry_level = 0
                 channel.next_check_time = None
-                logger.info(f"کانال '{channel.url}' با موفقیت {len(current_channel_valid_processed_configs)} کانفیگ معتبر ارائه داد. سطح تلاش مجدد بازنشانی شد.")
+                # لاگ INFO اینجا می‌تواند حذف شود یا به DEBUG تغییر یابد زیرا fetch_all_configs خلاصه‌ای ارائه می‌دهد.
+                # logger.info(f"کانال '{channel.url}' با موفقیت {len(current_channel_valid_processed_configs)} کانفیگ معتبر ارائه داد. سطح تلاش مجدد بازنشانی شد.")
             else:
                 self.config.update_channel_stats(channel, False)
                 channel.retry_level = min(channel.retry_level + 1, self.max_retry_level)
                 channel.next_check_time = datetime.now(timezone.utc) + self.retry_intervals[channel.retry_level]
-                logger.warning(f"کانال '{channel.url}' کانفیگ معتبری نداشت. سطح تلاش مجدد به {channel.retry_level} افزایش یافت. بررسی بعدی در: {channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+                # logger.warning(f"کانال '{channel.url}' کانفیگ معتبری نداشت. سطح تلاش مجدد به {channel.retry_level} افزایش یافت. بررسی بعدی در: {channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
 
             return current_channel_valid_processed_configs
 
@@ -342,7 +333,7 @@ class ConfigFetcher:
             self.config.update_channel_stats(channel, False)
             channel.retry_level = min(channel.retry_level + 1, self.max_retry_level)
             channel.next_check_time = datetime.now(timezone.utc) + self.retry_intervals[channel.retry_level]
-            logger.warning(f"واکشی از کانال '{channel.url}' ناموفق بود. سطح تلاش مجدد به {channel.retry_level} افزایش یافت. بررسی بعدی در: {channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            # logger.warning(f"واکشی از کانال '{channel.url}' ناموفق بود. سطح تلاش مجدد به {channel.retry_level} افزایش یافت. بررسی بعدی در: {channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
             return current_channel_valid_processed_configs
 
         response_time = time.time() - start_time
@@ -446,14 +437,17 @@ class ConfigFetcher:
             self.config.adjust_protocol_limits(channel)
             channel.retry_level = 0
             channel.next_check_time = None
-            logger.info(f"کانال '{channel.url}' با موفقیت {len(current_channel_valid_processed_configs)} کانفیگ معتبر ارائه داد. سطح تلاش مجدد بازنشانی شد.")
+            # لاگ INFO اینجا می‌تواند حذف شود یا به DEBUG تغییر یابد
+            # logger.info(f"کانال '{channel.url}' با موفقیت {len(current_channel_valid_processed_configs)} کانفیگ معتبر ارائه داد. سطح تلاش مجدد بازنشانی شد.")
         else:
             self.config.update_channel_stats(channel, False)
             channel.retry_level = min(channel.retry_level + 1, self.max_retry_level)
             channel.next_check_time = datetime.now(timezone.utc) + self.retry_intervals[channel.retry_level]
-            logger.warning(f"تعداد کافی کانفیگ در کانال '{channel.url}' یافت نشد: {len(current_channel_valid_processed_configs)} کانفیگ. سطح تلاش مجدد به {channel.retry_level} افزایش یافت. بررسی بعدی در: {channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}. ")
+            # لاگ WARNING اینجا می‌تواند حذف شود یا به DEBUG تغییر یابد
+            # logger.warning(f"تعداد کافی کانفیگ در کانال '{channel.url}' یافت نشد: {len(current_channel_valid_processed_configs)} کانفیگ. سطح تلاش مجدد به {channel.retry_level} افزایش یافت. بررسی بعدی در: {channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}. ")
         
-        logger.info(f"پایان واکشی از منبع: '{channel.url}'. مجموع کانفیگ‌های معتبر و پردازش شده: {len(current_channel_valid_processed_configs)}.")
+        # لاگ INFO اینجا می‌تواند حذف شود یا به DEBUG تغییر یابد
+        # logger.info(f"پایان واکشی از منبع: '{channel.url}'. مجموع کانفیگ‌های معتبر و پردازش شده: {len(current_channel_valid_processed_configs)}.")
         return current_channel_valid_processed_configs
 
     def process_config(self, config_string: str, channel: ChannelConfig) -> Optional[Dict[str, str]]:
@@ -519,49 +513,38 @@ class ConfigFetcher:
                 
                 # اعتبارسنجی نهایی و دقیق پروتکل خاص
                 if self.validator.validate_protocol_config(clean_config, actual_protocol):
-                    # **تغییر یافته**: دریافت شناسه کانونی برای بررسی دقیق تکراری بودن
                     canonical_id = self.validator.get_canonical_id(clean_config, actual_protocol)
                     
                     if canonical_id is None:
                         logger.debug(f"شناسه کانونی برای کانفیگ '{actual_protocol}' تولید نشد. نادیده گرفته شد: '{clean_config[:min(len(clean_config), 50)]}...'.")
-                        return None # اگر شناسه کانونی تولید نشد، کانفیگ را نادیده بگیرید
+                        return None
                         
-                    # **تغییر یافته**: بررسی منحصر به فرد بودن بر اساس شناسه کانونی
-                    # این کانفیگ فقط در صورتی به seen_configs اضافه می‌شود که canonical_id آن قبلاً دیده نشده باشد.
-                    with self._lock: # استفاده از قفل برای محافظت از seen_configs در محیط همزمان
+                    with self._lock: # محافظت از seen_configs در محیط همزمان
                         if canonical_id not in self.seen_configs:
-                            # کانفیگ منحصر به فرد است، در حال دریافت آدرس سرور و موقعیت جغرافیایی
                             server_address = self.validator.get_server_address(clean_config, actual_protocol)
                             if server_address:
                                 flag, country = self.get_location(server_address)
                                 logger.debug(f"موقعیت برای '{server_address}' یافت شد: {flag} {country}")
-                            # لاگ warning برای عدم یافتن پرچم (حذف شد، حالا در get_location به debug منتقل شد)
-                            # else:
-                            #     logger.debug(f"آدرس سرور برای پروتکل '{actual_protocol}' از کانفیگ استخراج نشد: '{clean_config[:min(len(clean_config), 50)]}...'.")
                         
-                            # به‌روزرسانی معیارهای کانال و شمارش پروتکل
                             channel.metrics.valid_configs += 1
                             channel.metrics.protocol_counts[actual_protocol] = channel.metrics.protocol_counts.get(actual_protocol, 0) + 1
                             
-                            # **تغییر یافته**: افزودن canonical_id به seen_configs
-                            # این تنها جایی است که seen_configs آپدیت می‌شود.
                             self.seen_configs.add(canonical_id) 
                             self.protocol_counts[actual_protocol] += 1
                             logger.debug(f"کانفیگ منحصر به فرد '{actual_protocol}' یافت شد: '{clean_config[:min(len(clean_config), 50)]}...' (ID: {canonical_id[:min(len(canonical_id), 20)]}...).")
                             
                             return {
-                                'config': clean_config, # **مهم**: رشته کامل کانفیگ اصلی را حفظ کنید
+                                'config': clean_config, 
                                 'protocol': actual_protocol,
                                 'flag': flag,
                                 'country': country,
-                                'canonical_id': canonical_id # **جدید**: شناسه کانونی را هم برگردانید
+                                'canonical_id': canonical_id 
                             }
                         else:
-                            # اگر canonical_id قبلا دیده شده باشد، این کانفیگ تکراری است.
                             logger.info(f"کانفیگ تکراری '{actual_protocol}' با شناسه کانونی {canonical_id[:min(len(canonical_id), 20)]}... نادیده گرفته شد: '{clean_config[:min(len(clean_config), 50)]}...'.")
                 else:
                     logger.debug(f"اعتبارسنجی پروتکل '{actual_protocol}' برای کانفیگ '{clean_config[:min(len(clean_config), 50)]}...' ناموفق بود. نادیده گرفته شد.")
-                break # پس از یافتن یک مطابقت پروتکل و پردازش، از حلقه خارج شوید
+                break 
                 
         logger.debug(f"کانفیگ '{config_string[:min(len(config_string), 50)]}...' با هیچ پروتکل فعال یا معتبری مطابقت نداشت. نادیده گرفته شد.")
         return None
@@ -603,7 +586,6 @@ class ConfigFetcher:
         protocol_configs: Dict[str, List[Dict[str, str]]] = {p: [] for p in self.config.SUPPORTED_PROTOCOLS}
         for config_dict in configs:
             protocol = config_dict['protocol']
-            # مطمئن شوید که پروتکل اصلی (نه alias) برای دسته‌بندی استفاده می‌شود
             if protocol.startswith('hy2://'):
                 protocol = 'hysteria2://'
             elif protocol.startswith('hy1://'):
@@ -620,11 +602,10 @@ class ConfigFetcher:
             return []
             
         balanced_configs: List[Dict[str, str]] = []
-        # مرتب‌سازی پروتکل‌ها بر اساس اولویت (بالاترین اولویت اول) و سپس تعداد موجود (بیشترین اول)
         sorted_protocols = sorted(
             protocol_configs.items(),
             key=lambda x: (
-                self.config.SUPPORTED_PROTOCOLS.get(x[0], {"priority": 999})["priority"], # مدیریت پروتکل‌های ناشناخته
+                self.config.SUPPORTED_PROTOCOLS.get(x[0], {"priority": 999})["priority"], 
                 len(x[1])
             ),
             reverse=True
@@ -638,10 +619,9 @@ class ConfigFetcher:
                 continue
 
             if len(protocol_config_list) >= protocol_info["min_configs"]:
-                # انتخاب تعداد کانفیگ‌ها بر اساس max_configs پروتکل مربوطه
                 num_to_add = min(
-                    protocol_info["max_configs"],  # حداکثر کانفیگ مجاز برای این پروتکل
-                    len(protocol_config_list)     # تعداد کانفیگ‌های موجود
+                    protocol_info["max_configs"],  
+                    len(protocol_config_list)     
                 )
                 balanced_configs.extend(protocol_config_list[:num_to_add])
                 logger.info(f"پروتکل '{protocol}': {num_to_add} کانفیگ اضافه شد (از {len(protocol_config_list)} موجود، حداکثر مجاز: {protocol_info['max_configs']}).")
@@ -658,7 +638,6 @@ class ConfigFetcher:
         """
         واکشی کانفیگ‌ها از تمام کانال‌های فعال و اعمال توازن پروتکل.
         کانال‌هایی که در حالت Smart Retry هستند، نادیده گرفته می‌شوند تا زمان بررسی بعدی‌شان فرا رسد.
-        **تغییر یافته**: بازگشت به واکشی غیرهمزمان برای عیب‌یابی.
         """
         all_configs: List[Dict[str, str]] = []
         
@@ -681,26 +660,34 @@ class ConfigFetcher:
             logger.info("هیچ کانال فعالی برای پردازش وجود ندارد (یا همه در حالت تلاش مجدد هوشمند هستند). فرآیند واکشی به پایان رسید.")
             return []
 
-        logger.info(f"شروع واکشی کانفیگ‌ها از {total_channels_to_process} کانال فعال به صورت غیرهمزمان (Sequential Fetching برای عیب‌یابی).")
+        logger.info(f"شروع واکشی کانفیگ‌ها از {total_channels_to_process} کانال فعال به صورت همزمان (Parallel Fetching برای افزایش سرعت).")
         
-        # **تغییر یافته**: بازگشت به واکشی غیرهمزمان برای عیب‌یابی.
-        # برای بازگشت به واکشی همزمان، کد ThreadPoolExecutor را از نسخه قبلی استفاده کنید.
-        for i, channel in enumerate(channels_to_process, 1):
-            logger.info(f"پیشرفت: {(i / total_channels_to_process) * 100:.2f}% - در حال پردازش کانال '{channel.url}'")
-            try:
-                channel_configs_dicts = self.fetch_configs_from_source(channel)
-                all_configs.extend(channel_configs_dicts)
-            except Exception as exc:
-                logger.error(f"کانال '{channel.url}' در حین واکشی (غیرهمزمان) با خطا مواجه شد: {exc}", exc_info=True)
+        # **تغییر یافته**: استفاده از ThreadPoolExecutor برای واکشی موازی
+        # max_workers را می‌توان بر اساس تعداد CPUهای موجود یا پهنای باند شبکه تنظیم کرد.
+        # تعداد 10 تاپیک برای تعادل بین استفاده از منابع و جلوگیری از مسدود شدن IP مناسب است.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, total_channels_to_process + 1)) as executor:
+            # ارسال هر کانال به یک Thread برای واکشی
+            futures = {executor.submit(self.fetch_configs_from_source, channel): channel for channel in channels_to_process}
             
-            if i < total_channels_to_process:
-                logger.debug("مکث 2 ثانیه قبل از واکشی کانال بعدی...")
-                time.sleep(2) # مکث برای جلوگیری از مسدود شدن IP در حالت غیرهمزمان
+            # **جدید**: پیگیری پیشرفت و لاگ کردن نتایج هر کانال به محض تکمیل
+            processed_channels_count = 0
+            for future in concurrent.futures.as_completed(futures):
+                channel_processed = futures[future]
+                processed_channels_count += 1
+                progress_percentage = (processed_channels_count / total_channels_to_process) * 100
+                
+                try:
+                    result_list = future.result() # دریافت نتیجه (لیست کانفیگ‌های پردازش شده)
+                    all_configs.extend(result_list)
+                    logger.info(f"پیشرفت: {progress_percentage:.2f}% ({processed_channels_count}/{total_channels_to_process}) - کانال '{channel_processed.url}' با {len(result_list)} کانفیگ معتبر پردازش شد. (کل کانفیگ‌های جمع‌آوری شده تاکنون: {len(all_configs)})")
+                except Exception as exc:
+                    logger.error(f"پیشرفت: {progress_percentage:.2f}% ({processed_channels_count}/{total_channels_to_process}) - کانال '{channel_processed.url}' در حین واکشی موازی با خطا مواجه شد: {exc}", exc_info=True)
+
 
         if all_configs:
             logger.info(f"واکشی از همه کانال‌ها تکمیل شد. مجموعاً {len(all_configs)} کانفیگ خام جمع‌آوری شد.")
             
-            # **تغییر یافته**: Unique کردن نهایی بر اساس شناسه کانونی در اینجا
+            # **تغییر یافته**: Unique کردن نهایی بر اساس شناسه کانونی
             final_unique_configs_list = []
             seen_canonical_ids_for_final_list = set()
             for cfg_dict in all_configs:
@@ -810,7 +797,7 @@ class ConfigFetcher:
                 'channels': []
             }
             
-            for channel in self.config.SOURCE_URLS:
+            for channel in self.config.SOURCE_URLS: 
                 channel_stats = {
                     'url': channel.url,
                     'enabled': channel.enabled,
@@ -855,10 +842,8 @@ class ConfigFetcher:
             ""
         ]
 
-        # کپی از لیست کانال‌ها برای مرتب‌سازی بدون تغییر لیست اصلی
         channels_for_report = list(self.config.SOURCE_URLS)
 
-        # تقسیم کانال‌ها به دو گروه: موجود/پردازش شده و جدید کشف شده
         processed_channels = []
         newly_discovered_channels = []
         
@@ -872,13 +857,10 @@ class ConfigFetcher:
             else:
                 processed_channels.append(channel)
 
-        # مرتب‌سازی کانال‌های موجود/پردازش شده بر اساس امتیاز کلی (نزولی: بهترین‌ها بالا)
         processed_channels.sort(key=lambda c: c.metrics.overall_score, reverse=True)
         
-        # مرتب‌سازی کانال‌های جدید کشف شده بر اساس URL برای ترتیب ثابت
         newly_discovered_channels.sort(key=lambda c: c.url)
 
-        # ترکیب لیست‌ها: ابتدا پردازش شده‌ها (مرتب شده), سپس جدید کشف شده‌ها
         sorted_channels_for_report = processed_channels + newly_discovered_channels
 
         for channel in sorted_channels_for_report:
@@ -895,21 +877,19 @@ class ConfigFetcher:
             status_line += f"\n  - **وضعیت واکشی**: موفق: `{channel.metrics.success_count}` | ناموفق: `{channel.metrics.fail_count}`"
             status_line += f"\n  - **کانفیگ‌های معتبر (آخرین واکشی)**: `{channel.metrics.valid_configs}`"
             
-            # نمایش تعداد کانفیگ‌ها بر اساس پروتکل
             protocol_counts_str = ", ".join([f"{p.replace('://', '')}: {count}" for p, count in channel.metrics.protocol_counts.items() if count > 0])
             if protocol_counts_str:
                 status_line += f"\n  - **پروتکل‌های موجود**: {protocol_counts_str}"
             else:
                 status_line += f"\n  - **پروتکل‌های موجود**: (هیچ)"
 
-            # وضعیت Smart Retry
             if channel.next_check_time:
                 status_line += f"\n  - **تلاش مجدد هوشمند**: سطح `{channel.retry_level}` | بررسی بعدی: `{channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}`"
             else:
                 status_line += f"\n  - **تلاش مجدد هوشمند**: عادی (بازنشانی شده)"
 
             report_content.append(status_line)
-            report_content.append("") # خط خالی برای خوانایی بیشتر
+            report_content.append("") 
 
         try:
             os.makedirs(os.path.dirname(report_file_path), exist_ok=True)
@@ -951,3 +931,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
