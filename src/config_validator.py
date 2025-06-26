@@ -1,8 +1,11 @@
 import re
 import base64
 import json
+import logging 
 from typing import Optional, Tuple, List, Dict, Any
 from urllib.parse import unquote, urlparse, parse_qs
+
+logger = logging.getLogger(__name__)
 
 class ConfigValidator:
     """
@@ -14,7 +17,7 @@ class ConfigValidator:
     def is_base64(s: str) -> bool:
         """بررسی می‌کند که آیا یک رشته Base64 معتبر است یا خیر."""
         try:
-            s = s.rstrip('=') # حذف پدینگ برای بررسی راحت‌تر
+            s = s.rstrip('=') 
             return bool(re.match(r'^[A-Za-z0-9+/\-_]*$', s))
         except:
             return False
@@ -23,9 +26,9 @@ class ConfigValidator:
     def decode_base64_url(s: str) -> Optional[bytes]:
         """رمزگشایی یک رشته Base64 URL-safe."""
         try:
-            s = s.replace('-', '+').replace('_', '/') # تبدیل فرمت URL-safe به فرمت استاندارد Base64
+            s = s.replace('-', '+').replace('_', '/') 
             padding = 4 - (len(s) % 4)
-            if padding != 4: # اضافه کردن پدینگ '=' در صورت نیاز
+            if padding != 4: 
                 s += '=' * padding
             return base64.b64decode(s)
         except:
@@ -48,7 +51,6 @@ class ConfigValidator:
         """پاکسازی کانفیگ VMess با حذف بخش‌های اضافی بعد از رشته Base64 اصلی."""
         if "vmess://" in config:
             base64_part = config[8:]
-            # فقط کاراکترهای مجاز Base64 (شامل - و _ برای URL-safe) را نگه دارید
             base64_clean = re.split(r'[^A-Za-z0-9+/=_-]', base64_part)[0]
             return f"vmess://{base64_clean}"
         return config
@@ -64,12 +66,11 @@ class ConfigValidator:
     def clean_ssr_config(config: str) -> str:
         """پاکسازی کانفیگ SSR، اطمینان از شروع با ssr:// و Base64 معتبر."""
         if config.startswith("ssr://"):
-            parts = config[6:].split("/?") # جدا کردن قبل از پارامترها
+            parts = config[6:].split("/?") 
             base64_part = parts[0]
-            # اطمینان از معتبر بودن بخش Base64
             if ConfigValidator.is_base64(base64_part):
                 return config
-        return config # اگر فرمت SSR معتبر نبود، اصلی را برگردانید
+        return config
 
     @staticmethod
     def is_vmess_config(config: str) -> bool:
@@ -80,7 +81,7 @@ class ConfigValidator:
             base64_part = config[8:]
             decoded = ConfigValidator.decode_base64_url(base64_part)
             if decoded:
-                json.loads(decoded) # تلاش برای بارگذاری به عنوان JSON
+                json.loads(decoded)
                 return True
             return False
         except Exception:
@@ -92,13 +93,13 @@ class ConfigValidator:
         try:
             if not config.startswith('ssr://'):
                 return False
-            base64_part = config[6:].split('/?')[0] # گرفتن بخش قبل از پارامترهای اختیاری
+            base64_part = config[6:].split('/?')[0] 
             decoded_bytes = ConfigValidator.decode_base64_url(base64_part)
             if not decoded_bytes:
                 return False
             decoded_str = decoded_bytes.decode('utf-8', errors='ignore') 
             parts = decoded_str.split(':')
-            return len(parts) >= 6 # سرور، پورت، پروتکل، متد، obfs، پسورد
+            return len(parts) >= 6 
         except Exception:
             return False
             
@@ -109,7 +110,7 @@ class ConfigValidator:
             if not config.startswith('hysteria://'):
                 return False
             parsed = urlparse(config)
-            return bool(parsed.netloc and parsed.port) # باید سرور و پورت داشته باشد
+            return bool(parsed.netloc and parsed.port) 
         except Exception:
             return False
 
@@ -117,9 +118,10 @@ class ConfigValidator:
     def is_tuic_config(config: str) -> bool:
         """بررسی اعتبار یک کانفیگ TUIC."""
         try:
-            if config.startswith('tuic://'):
-                parsed = urlparse(config)
-                return bool(parsed.netloc and ':' in parsed.netloc and parsed.username) # باید هاست، پورت و UUID داشته باشد
+            if not config.startswith('tuic://'):
+                return False
+            parsed = urlparse(config)
+            return bool(parsed.netloc and ':' in parsed.netloc and parsed.username) 
             return False
         except:
             return False
@@ -131,7 +133,7 @@ class ConfigValidator:
             if not config.startswith('mieru://'):
                 return False
             parsed = urlparse(config)
-            return bool(parsed.netloc and parsed.username and parsed.port) # نیاز به uuid@server:port دارد
+            return bool(parsed.netloc and parsed.username and parsed.port) 
         except:
             return False
 
@@ -142,7 +144,7 @@ class ConfigValidator:
             if not config.startswith('snell://'):
                 return False
             parsed = urlparse(config)
-            return bool(parsed.netloc and parsed.port and 'psk=' in parsed.query) # نیاز به server:port و psk دارد
+            return bool(parsed.netloc and parsed.port and 'psk=' in parsed.query) 
         except:
             return False
 
@@ -153,7 +155,7 @@ class ConfigValidator:
             if not config.startswith('anytls://'):
                 return False
             parsed = urlparse(config)
-            return bool(parsed.netloc and parsed.port) # نیاز به server:port دارد
+            return bool(parsed.netloc and parsed.port) 
         except Exception:
             return False
 
@@ -164,7 +166,7 @@ class ConfigValidator:
             if not config.startswith('ssh://'):
                 return False
             parsed = urlparse(config)
-            return bool(parsed.netloc and parsed.username and parsed.password and parsed.port) # نیاز به user:pass@server:port دارد
+            return bool(parsed.netloc and parsed.username and parsed.password and parsed.port) 
         except Exception:
             return False
 
@@ -175,7 +177,7 @@ class ConfigValidator:
             if not config.startswith('juicity://'):
                 return False
             parsed = urlparse(config)
-            return bool(parsed.netloc and parsed.username and parsed.port and 'password=' in parsed.query) # نیاز به uuid@server:port و password دارد
+            return bool(parsed.netloc and parsed.username and parsed.port and 'password=' in parsed.query) 
         except Exception:
             return False
             
@@ -357,76 +359,82 @@ class ConfigValidator:
         
         telegram_url_pattern = r"(?:https?://)?t\.me/(?:s/)?([a-zA-Z0-9_]+)"
 
-        parsed_url = urlparse(config_string)
-        
-        if parsed_url.fragment:
-            matches = re.findall(telegram_url_pattern, unquote(parsed_url.fragment))
+        try: # افزودن try-except برای مدیریت خطاهای urlparse (مثلا Invalid IPv6 URL)
+            parsed_url = urlparse(config_string)
+            
+            if parsed_url.fragment:
+                matches = re.findall(telegram_url_pattern, unquote(parsed_url.fragment))
+                for match in matches:
+                    found_channels.add(f"https://t.me/s/{match}")
+
+            if parsed_url.query:
+                query_params = parse_qs(parsed_url.query)
+                for key, values in query_params.items():
+                    for value in values:
+                        matches = re.findall(telegram_url_pattern, unquote(value))
+                        for match in matches:
+                            found_channels.add(f"https://t.me/s/{match}")
+
+            if config_string.startswith('vmess://'):
+                try:
+                    base64_part = config_string[len('vmess://'):]
+                    decoded_vmess = ConfigValidator.decode_base64_url(base64_part)
+                    if decoded_vmess:
+                        vmess_data = json.loads(decoded_vmess.decode('utf-8'))
+                        potential_fields = [vmess_data.get('ps'), vmess_data.get('id')]
+                        for field_value in potential_fields:
+                            if isinstance(field_value, str):
+                                matches = re.findall(telegram_url_pattern, field_value)
+                                for match in matches:
+                                    found_channels.add(f"https://t.me/s/{match}")
+                except Exception:
+                    pass
+            elif config_string.startswith('ssr://'):
+                try:
+                    base64_part = config_string[len('ssr://'):].split('/?')[0]
+                    decoded_ssr = ConfigValidator.decode_base64_url(base64_part)
+                    if decoded_ssr:
+                        full_ssr_params = decoded_ssr.decode('utf-8', errors='ignore')
+                        
+                        ssr_fragment_match = re.search(r'#(.+)', config_string)
+                        if ssr_fragment_match:
+                            remark_base64 = ssr_fragment_match.group(1)
+                            decoded_remark = ConfigValidator.decode_base64_url(remark_base64)
+                            if decoded_remark:
+                                matches = re.findall(telegram_url_pattern, decoded_remark.decode('utf-8', errors='ignore'))
+                                for match in matches:
+                                    found_channels.add(f"https://t.me/s/{match}")
+                        
+                        matches = re.findall(telegram_url_pattern, full_ssr_params)
+                        for match in matches:
+                            found_channels.add(f"https://t.me/s/{match}")
+
+                except Exception:
+                    pass
+            elif config_string.startswith('hysteria://'):
+                try:
+                    parsed_hy = urlparse(config_string)
+                    if parsed_hy.fragment:
+                        matches = re.findall(telegram_url_pattern, unquote(parsed_hy.fragment))
+                        for match in matches:
+                            found_channels.add(f"https://t.me/s/{match}")
+                    query_params = parse_qs(parsed_hy.query)
+                    if 'password' in query_params:
+                        matches = re.findall(telegram_url_pattern, query_params['password'][0])
+                        for match in matches:
+                            found_channels.add(f"https://t.me/s/{match}")
+                except Exception:
+                    pass
+
+            # 4. جستجوی عمومی در کل رشته کانفیگ به عنوان آخرین چاره
+            matches = re.findall(telegram_url_pattern, config_string)
             for match in matches:
                 found_channels.add(f"https://t.me/s/{match}")
+        except ValueError as e:
+            logger.debug(f"خطا در تجزیه URL کانفیگ برای استخراج کانال تلگرام: '{config_string[:min(len(config_string), 50)]}...' - {str(e)}")
+        except Exception as e:
+            logger.debug(f"خطای ناشناخته در استخراج کانال تلگرام از کانفیگ: '{config_string[:min(len(config_string), 50)]}...' - {str(e)}")
 
-        if parsed_url.query:
-            query_params = parse_qs(parsed_url.query)
-            for key, values in query_params.items():
-                for value in values:
-                    matches = re.findall(telegram_url_pattern, unquote(value))
-                    for match in matches:
-                        found_channels.add(f"https://t.me/s/{match}")
-
-        if config_string.startswith('vmess://'):
-            try:
-                base64_part = config_string[len('vmess://'):]
-                decoded_vmess = ConfigValidator.decode_base64_url(base64_part)
-                if decoded_vmess:
-                    vmess_data = json.loads(decoded_vmess.decode('utf-8'))
-                    potential_fields = [vmess_data.get('ps'), vmess_data.get('id')]
-                    for field_value in potential_fields:
-                        if isinstance(field_value, str):
-                            matches = re.findall(telegram_url_pattern, field_value)
-                            for match in matches:
-                                found_channels.add(f"https://t.me/s/{match}")
-            except Exception:
-                pass
-        elif config_string.startswith('ssr://'):
-            try:
-                base64_part = config_string[len('ssr://'):].split('/?')[0]
-                decoded_ssr = ConfigValidator.decode_base64_url(base64_part)
-                if decoded_ssr:
-                    full_ssr_params = decoded_ssr.decode('utf-8', errors='ignore')
-                    
-                    ssr_fragment_match = re.search(r'#(.+)', config_string)
-                    if ssr_fragment_match:
-                        remark_base64 = ssr_fragment_match.group(1)
-                        decoded_remark = ConfigValidator.decode_base64_url(remark_base64)
-                        if decoded_remark:
-                            matches = re.findall(telegram_url_pattern, decoded_remark.decode('utf-8', errors='ignore'))
-                            for match in matches:
-                                found_channels.add(f"https://t.me/s/{match}")
-                    
-                    matches = re.findall(telegram_url_pattern, full_ssr_params)
-                    for match in matches:
-                        found_channels.add(f"https://t.me/s/{match}")
-
-            except Exception:
-                pass
-        elif config_string.startswith('hysteria://'):
-            try:
-                parsed_hy = urlparse(config_string)
-                if parsed_hy.fragment:
-                    matches = re.findall(telegram_url_pattern, unquote(parsed_hy.fragment))
-                    for match in matches:
-                        found_channels.add(f"https://t.me/s/{match}")
-                query_params = parse_qs(parsed_hy.query)
-                if 'password' in query_params:
-                    matches = re.findall(telegram_url_pattern, query_params['password'][0])
-                    for match in matches:
-                        found_channels.add(f"https://t.me/s/{match}")
-            except Exception:
-                pass
-
-        # 4. جستجوی عمومی در کل رشته کانفیگ به عنوان آخرین چاره
-        matches = re.findall(telegram_url_pattern, config_string)
-        for match in matches:
-            found_channels.add(f"https://t.me/s/{match}")
 
         return list(found_channels)
     
@@ -477,11 +485,19 @@ class ConfigValidator:
     @staticmethod
     def get_canonical_parameters(config_string: str, protocol_prefix: str) -> Optional[Dict[str, Any]]:
         """
-        استخراج پارامترهای "کانونی" (اصلی و عملکردی) یک کانفیگ برای شناسایی تکراری‌ها.
-        این تابع بخش‌های غیرعملکردی مانند remark/tag را نادیده می‌گیرد.
+        **تغییر یافته**: استخراج پارامترهای "کانونی" (اصلی و عملکردی) یک کانفیگ برای شناسایی تکراری‌ها.
+        این تابع بخش‌های غیرعملکردی مانند remark/tag را نادیده می‌گیرد و خروجی را دقیقاً کنترل می‌کند.
         """
-        parsed_url = urlparse(config_string)
-        
+        logger.debug(f"در حال دریافت پارامترهای کانونی برای کانفیگ: '{config_string[:min(len(config_string), 50)]}...'")
+        try: 
+            parsed_url = urlparse(config_string)
+        except ValueError as e:
+            logger.debug(f"خطا در تجزیه URL برای دریافت پارامترهای کانونی: '{config_string[:50]}...' - {str(e)}", exc_info=True) # اضافه کردن exc_info=True
+            return None
+        except Exception as e:
+            logger.debug(f"خطای ناشناخته در دریافت پارامترهای کانونی: '{config_string[:50]}...' - {str(e)}", exc_info=True) # اضافه کردن exc_info=True
+            return None
+
         if protocol_prefix == 'hy2://':
             protocol_prefix = 'hysteria2://'
         elif protocol_prefix == 'hy1://':
@@ -493,62 +509,65 @@ class ConfigValidator:
             if protocol_prefix == 'vmess://':
                 decoded_data = base64.b64decode(config_string[len(protocol_prefix):]).decode('utf-8')
                 vmess_json = json.loads(decoded_data)
+                # **بهبود یافته**: اطمینان از وجود کلیدها و ارائه مقدار پیش‌فرض رشته خالی
                 canonical_params.update({
-                    'server': vmess_json.get('add'),
-                    'port': vmess_json.get('port'),
-                    'uuid': vmess_json.get('id'),
-                    'security': vmess_json.get('scy', 'auto'),
-                    'net': vmess_json.get('net', 'tcp'),
-                    'type': vmess_json.get('type', 'none'),
+                    'server': vmess_json.get('add', ''),
+                    'port': str(vmess_json.get('port', '')), 
+                    'uuid': vmess_json.get('id', ''),
+                    'security': vmess_json.get('scy', ''),
+                    'net': vmess_json.get('net', ''),
+                    'type': vmess_json.get('type', ''),
                     'host': vmess_json.get('host', ''),
                     'path': vmess_json.get('path', ''),
-                    'tls': vmess_json.get('tls', '')
+                    'tls': 'tls' if vmess_json.get('tls') == 'tls' else '' 
                 })
             elif protocol_prefix == 'vless://':
+                query_params_dict = parse_qs(parsed_url.query) 
                 canonical_params.update({
-                    'server': parsed_url.hostname,
-                    'port': parsed_url.port,
-                    'uuid': parsed_url.username,
-                    'flow': parse_qs(parsed_url.query).get('flow', [''])[0],
-                    'security': parse_qs(parsed_url.query).get('security', [''])[0],
-                    'sni': parse_qs(parsed_url.query).get('sni', [parsed_url.hostname])[0],
-                    'type': parse_qs(parsed_url.query).get('type', ['tcp'])[0],
-                    'host': parse_qs(parsed_url.query).get('host', [''])[0],
-                    'path': parse_qs(parsed_url.query).get('path', [''])[0]
+                    'server': parsed_url.hostname or '',
+                    'port': str(parsed_url.port or ''),
+                    'uuid': parsed_url.username or '',
+                    'flow': query_params_dict.get('flow', [''])[0],
+                    'security': query_params_dict.get('security', [''])[0], 
+                    'sni': query_params_dict.get('sni', [parsed_url.hostname or ''])[0],
+                    'type': query_params_dict.get('type', [''])[0], 
+                    'host': query_params_dict.get('host', [''])[0],
+                    'path': query_params_dict.get('path', [''])[0]
                 })
             elif protocol_prefix == 'trojan://':
+                query_params_dict = parse_qs(parsed_url.query)
                 canonical_params.update({
-                    'server': parsed_url.hostname,
-                    'port': parsed_url.port,
-                    'password': parsed_url.username,
-                    'sni': parse_qs(parsed_url.query).get('sni', [parsed_url.hostname])[0],
-                    'alpn': parse_qs(parsed_url.query).get('alpn', [''])[0],
-                    'type': parse_qs(parsed_url.query).get('type', ['tcp'])[0],
-                    'path': parse_qs(parsed_url.query).get('path', [''])[0]
+                    'server': parsed_url.hostname or '',
+                    'port': str(parsed_url.port or ''),
+                    'password': parsed_url.username or '',
+                    'sni': query_params_dict.get('sni', [parsed_url.hostname or ''])[0],
+                    'alpn': query_params_dict.get('alpn', [''])[0],
+                    'type': query_params_dict.get('type', [''])[0],
+                    'path': query_params_dict.get('path', [''])[0]
                 })
             elif protocol_prefix in ['hysteria2://', 'hysteria://']:
-                query_params = parse_qs(parsed_url.query)
+                query_params_dict = parse_qs(parsed_url.query)
                 canonical_params.update({
-                    'server': parsed_url.hostname,
-                    'port': parsed_url.port,
-                    'password': parsed_url.username or query_params.get('auth', [''])[0] or query_params.get('password', [''])[0],
-                    'sni': query_params.get('sni', [parsed_url.hostname])[0],
-                    'alpn': query_params.get('alpn', [''])[0],
-                    'obfs': query_params.get('obfs', [''])[0] 
+                    'server': parsed_url.hostname or '',
+                    'port': str(parsed_url.port or ''),
+                    'password': parsed_url.username or query_params_dict.get('auth', [''])[0] or query_params_dict.get('password', [''])[0],
+                    'sni': query_params_dict.get('sni', [parsed_url.hostname or ''])[0],
+                    'alpn': query_params_dict.get('alpn', [''])[0],
+                    'obfs': query_params_dict.get('obfs', [''])[0] 
                 })
             elif protocol_prefix == 'ss://':
                 parts = config_string.replace('ss://', '').split('@')
                 if len(parts) == 2:
                     method_pass_encoded = parts[0]
-                    decoded_method_pass = base64.b64decode(method_pass_encoded.replace('-', '+').replace('_', '/')).decode('utf-8')
-                    method, password = decoded_method_pass.split(':')
+                    decoded_method_pass = base64.b64decode(method_pass_encoded.replace('-', '+').replace('_', '/')).decode('utf-8', errors='ignore')
+                    method, password = (decoded_method_pass.split(':', 1) + [''])[:2] 
                     server_port_part = parts[1].split('#')[0]
-                    server, port = server_port_part.split(':')
+                    server, port = (server_port_part.split(':', 1) + [''])[:2]
                     canonical_params.update({
-                        'server': server,
-                        'port': int(port),
-                        'method': method,
-                        'password': password
+                        'server': server or '',
+                        'port': str(port or ''),
+                        'method': method or '',
+                        'password': password or ''
                     })
             elif protocol_prefix == 'ssr://':
                 base64_part = config_string[len(protocol_prefix):].split('/?')[0]
@@ -558,95 +577,99 @@ class ConfigValidator:
                     password_encoded = ssr_parts[5]
                     password = base64.b64decode(password_encoded.replace('-', '+').replace('_', '/')).decode('utf-8', errors='ignore')
                     canonical_params.update({
-                        'server': ssr_parts[0],
-                        'port': int(ssr_parts[1]),
-                        'protocol_type': ssr_parts[2],
-                        'method': ssr_parts[3],
-                        'obfs': ssr_parts[4],
-                        'password': password
+                        'server': ssr_parts[0] or '',
+                        'port': str(ssr_parts[1] or ''),
+                        'protocol_type': ssr_parts[2] or '',
+                        'method': ssr_parts[3] or '',
+                        'obfs': ssr_parts[4] or '',
+                        'password': password or ''
                     })
             elif protocol_prefix == 'tuic://':
-                query_params = parse_qs(parsed_url.query)
+                query_params_dict = parse_qs(parsed_url.query)
                 canonical_params.update({
-                    'server': parsed_url.hostname,
-                    'port': parsed_url.port,
-                    'uuid': parsed_url.username,
-                    'password': query_params.get('password', [''])[0],
-                    'alpn': query_params.get('alpn', [''])[0],
-                    'congestion_control': query_params.get('congestion_control', [''])[0],
-                    'udp_relay_mode': query_params.get('udp_relay_mode', [''])[0],
-                    'disable_sni': query_params.get('disable_sni', [''])[0],
-                    'tls': 'tls' in parsed_url.scheme
+                    'server': parsed_url.hostname or '',
+                    'port': str(parsed_url.port or ''),
+                    'uuid': parsed_url.username or '',
+                    'password': query_params_dict.get('password', [''])[0],
+                    'alpn': query_params_dict.get('alpn', [''])[0],
+                    'congestion_control': query_params_dict.get('congestion_control', [''])[0],
+                    'udp_relay_mode': query_params_dict.get('udp_relay_mode', [''])[0],
+                    'disable_sni': query_params_dict.get('disable_sni', [''])[0],
+                    'tls': 'tls' if parsed_url.scheme.endswith('+tls') else ''
                 })
             elif protocol_prefix == 'mieru://':
-                query_params = parse_qs(parsed_url.query)
+                query_params_dict = parse_qs(parsed_url.query)
                 canonical_params.update({
-                    'uuid': parsed_url.username,
-                    'server': parsed_url.hostname,
-                    'port': parsed_url.port,
-                    'tls': query_params.get('tls', [''])[0],
-                    'udp_over_tcp': query_params.get('udp_over_tcp', [''])[0],
-                    'peer_fingerprint': query_params.get('peer_fingerprint', [''])[0],
-                    'server_name': query_params.get('server_name', [''])[0],
+                    'uuid': parsed_url.username or '',
+                    'server': parsed_url.hostname or '',
+                    'port': str(parsed_url.port or ''),
+                    'tls': query_params_dict.get('tls', [''])[0],
+                    'udp_over_tcp': query_params_dict.get('udp_over_tcp', [''])[0],
+                    'peer_fingerprint': query_params_dict.get('peer_fingerprint', [''])[0],
+                    'server_name': query_params_dict.get('server_name', [''])[0],
                 })
             elif protocol_prefix == 'snell://':
-                query_params = parse_qs(parsed_url.query)
+                query_params_dict = parse_qs(parsed_url.query)
                 canonical_params.update({
-                    'server': parsed_url.hostname,
-                    'port': parsed_url.port,
-                    'psk': query_params.get('psk', [''])[0],
-                    'version': query_params.get('version', [''])[0],
-                    'obfs': query_params.get('obfs', [''])[0],
-                    'obfs_uri': query_params.get('uri', [''])[0],
-                    'tfo': query_params.get('tfo', [''])[0]
+                    'server': parsed_url.hostname or '',
+                    'port': str(parsed_url.port or ''),
+                    'psk': query_params_dict.get('psk', [''])[0],
+                    'version': query_params_dict.get('version', [''])[0],
+                    'obfs': query_params_dict.get('obfs', [''])[0],
+                    'obfs_uri': query_params_dict.get('uri', [''])[0],
+                    'tfo': query_params_dict.get('tfo', [''])[0]
                 })
             elif protocol_prefix == 'anytls://':
-                query_params = parse_qs(parsed_url.query)
+                query_params_dict = parse_qs(parsed_url.query)
                 canonical_params.update({
-                    'protocol_type': parsed_url.username,
-                    'server': parsed_url.hostname,
-                    'port': parsed_url.port,
-                    'sni': query_params.get('sni', [''])[0],
-                    'path': query_params.get('path', [''])[0],
-                    'host': query_params.get('host', [''])[0],
-                    'tls': query_params.get('tls', [''])[0]
+                    'protocol_type': parsed_url.username or '',
+                    'server': parsed_url.hostname or '',
+                    'port': str(parsed_url.port or ''),
+                    'sni': query_params_dict.get('sni', [''])[0],
+                    'path': query_params_dict.get('path', [''])[0],
+                    'host': query_params_dict.get('host', [''])[0],
+                    'tls': query_params_dict.get('tls', [''])[0]
                 })
             elif protocol_prefix == 'ssh://':
                 canonical_params.update({
-                    'user': parsed_url.username,
-                    'password': parsed_url.password,
-                    'server': parsed_url.hostname,
-                    'port': parsed_url.port
+                    'user': parsed_url.username or '',
+                    'password': parsed_url.password or '',
+                    'server': parsed_url.hostname or '',
+                    'port': str(parsed_url.port or '')
                 })
             elif protocol_prefix == 'juicity://':
-                query_params = parse_qs(parsed_url.query)
+                query_params_dict = parse_qs(parsed_url.query)
                 canonical_params.update({
-                    'uuid': parsed_url.username,
-                    'server': parsed_url.hostname,
-                    'port': parsed_url.port,
-                    'password': query_params.get('password', [''])[0],
-                    'security': query_params.get('security', [''])[0],
-                    'fingerprint': query_params.get('fingerprint', [''])[0],
-                    'congestion_control': query_params.get('congestion_control', [''])[0],
-                    'alpn': query_params.get('alpn', [''])[0]
+                    'uuid': parsed_url.username or '',
+                    'server': parsed_url.hostname or '',
+                    'port': str(parsed_url.port or ''),
+                    'password': query_params_dict.get('password', [''])[0],
+                    'security': query_params_dict.get('security', [''])[0],
+                    'fingerprint': query_params_dict.get('fingerprint', [''])[0],
+                    'congestion_control': query_params_dict.get('congestion_control', [''])[0],
+                    'alpn': query_params_dict.get('alpn', [''])[0]
                 })
             elif protocol_prefix == 'wireguard://':
                 endpoint_match = re.search(r'@([^/?#]+)', config_string)
                 canonical_params.update({
-                    'public_key': parsed_url.username,
-                    'endpoint': endpoint_match.group(1) if endpoint_match else None
+                    'public_key': parsed_url.username or '',
+                    'endpoint': (endpoint_match.group(1) if endpoint_match else '') # اطمینان از رشته
                 })
             elif protocol_prefix == 'warp://':
                 canonical_params.update({
-                    'server': parsed_url.hostname if parsed_url.hostname else '162.159.192.1', 
-                    'uuid': parsed_url.username 
+                    'server': parsed_url.hostname or '162.159.192.1', 
+                    'uuid': parsed_url.username or '' 
                 })
             else: # پروتکل ناشناخته
+                logger.debug(f"پروتکل ناشناخته برای پارامترهای کانونی: '{protocol_prefix}'. کانفیگ: '{config_string[:min(len(config_string), 50)]}...'")
                 return None
 
-            canonical_params = {k: v for k, v in canonical_params.items() if v is not None and v != ''}
+            # حذف مقادیر None یا رشته‌های خالی از canonical_params برای اطمینان از یکپارچگی (حالا کمتر لازم است)
+            # canonical_params = {k: v for k, v in canonical_params.items() if v is not None and v != ''}
+            logger.debug(f"پارامترهای کانونی استخراج شده: {canonical_params}")
             return canonical_params
-        except Exception:
+        except Exception as e: # Catch any parsing error
+            logger.debug(f"خطا در استخراج پارامترهای کانونی برای '{config_string[:min(len(config_string), 50)]}...': {str(e)}", exc_info=True)
             return None
 
     @staticmethod
@@ -657,8 +680,11 @@ class ConfigValidator:
         """
         canonical_params = ConfigValidator.get_canonical_parameters(config_string, protocol_prefix)
         if not canonical_params:
+            logger.debug(f"تولید شناسه کانونی برای پروتکل '{protocol_prefix}' ناموفق بود: پارامترها خالی هستند یا استخراج نشدند.")
             return None
         
         sorted_canonical_params = sorted(canonical_params.items())
-        return json.dumps(sorted_canonical_params, sort_keys=True)
+        canonical_id = json.dumps(sorted_canonical_params, sort_keys=True)
+        logger.debug(f"شناسه کانونی تولید شده برای '{protocol_prefix}': {canonical_id[:min(len(canonical_id), 100)]}...") # نمایش بخشی از ID
+        return canonical_id
 
