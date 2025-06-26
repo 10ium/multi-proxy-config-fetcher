@@ -16,6 +16,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# --- DEBUG PRINT --- این خط برای عیب‌یابی اولیه اضافه شده است. پس از رفع مشکل می‌توانید آن را حذف کنید.
+print("--- DEBUG: main.py started ---")
+
 def main():
     """
     تابع اصلی برای اجرای فرآیند واکشی، پردازش و ذخیره کانفیگ‌های پروکسی.
@@ -24,7 +27,7 @@ def main():
     try:
         # 1. مقداردهی اولیه پیکربندی‌ها
         config = ProxyConfig() 
-
+        
         # 2. مقداردهی اولیه ConfigFetcher (که سایر ماژول‌ها را در خود دارد)
         fetcher = ConfigFetcher(config) 
 
@@ -50,7 +53,7 @@ def main():
 
     except Exception as e:
         logger.critical(f"خطای بحرانی در اجرای اصلی: {str(e)}", exc_info=True)
-        # در صورت بروز خطای بحرانی، پیام لاگ می‌شود. (بدون اطلاع‌رسانی تلگرام)
 
 if __name__ == '__main__':
     main()
+
