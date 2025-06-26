@@ -131,7 +131,7 @@ class ProxyConfig:
     def _get_protocol_enablement_status(self) -> str:
         """برای لاگ‌گیری، وضعیت فعال بودن پروتکل‌ها را برمی‌گرداند."""
         status = []
-        for p, info in self.SUPPORTED_PROTOCOls.items():
+        for p, info in self.SUPPORTED_PROTOCOLS.items():
             status.append(f"{p.replace('://', '')}: {'فعال' if info['enabled'] else 'غیرفعال'}")
         return ", ".join(status)
 
@@ -226,7 +226,7 @@ class ProxyConfig:
         """
         تنظیم محدودیت‌ها برای حالت "تعداد مشخص".
         سیستم سعی می‌کند تعداد کانفیگ‌ها را به specific_config_count نزدیک کند.
-        این تعداد اکنون بین پروتکل‌های فعال تقسیم می‌شود.
+        این تعداد بین پروتکل‌های فعال تقسیم می‌شود.
         """
         if self.specific_config_count <= 0:
             self.specific_config_count = 50 # پیش فرض اگر عدد مشخص شده نامعتبر بود
