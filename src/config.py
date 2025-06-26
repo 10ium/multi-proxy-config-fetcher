@@ -11,8 +11,7 @@ import os
 # این فایل شامل متغیرهایی مانند SOURCE_URLS، USE_MAXIMUM_POWER و ENABLED_PROTOCOLS است.
 from user_settings import SOURCE_URLS, USE_MAXIMUM_POWER, SPECIFIC_CONFIG_COUNT, ENABLED_PROTOCOLS, MAX_CONFIG_AGE_DAYS
 
-# پیکربندی لاگ‌گیری مرکزی
-# لاگ‌ها در کنسول و در فایل proxy_fetcher.log ثبت می‌شوند.
+# پیکربندی لاگ‌گیری مرکزی (اطمینان از پیکربندی لاگر)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -49,7 +48,8 @@ class ChannelConfig:
         self.last_check_time = None        # آخرین زمان بررسی کانال
         self.next_check_time: Optional[datetime] = None # زمان بعدی که باید کانال بررسی شود (برای Smart Retry)
         self.retry_level: int = 0         # سطح تلاش مجدد برای Smart Retry (0: عادی، 1: 3 روز، 2: 1 هفته و...)
-        
+        logger.debug(f"شیء ChannelConfig برای URL: '{self.url}' ایجاد شد.") # لاگ DEBUG
+
     def _validate_url(self, url: str) -> str:
         """
         اعتبارسنجی فرمت URL و پروتکل آن.
@@ -87,6 +87,7 @@ class ChannelConfig:
                 response_score = max(0, min(15, 15 * (1 - (self.metrics.avg_response_time / 10))))
             
             self.metrics.overall_score = round(reliability_score + quality_score + uniqueness_score + response_score, 2)
+            logger.debug(f"امتیاز کلی برای کانال '{self.url}' محاسبه شد: {self.metrics.overall_score}")
         except Exception as e:
             logger.error(f"خطا در محاسبه امتیاز برای کانال '{self.url}': {str(e)}")
             self.metrics.overall_score = 0.0
@@ -96,23 +97,42 @@ class ProxyConfig:
     کلاس ProxyConfig برای مدیریت تنظیمات و منابع کلی پراکسی.
     """
     def __init__(self, initial_source_urls: List[str] = None):
+        logger.info("در حال بارگذاری و پیکربندی ProxyConfig...")
         self.use_maximum_power = USE_MAXIMUM_POWER           # آیا از حداکثر قدرت واکشی استفاده شود؟
         self.specific_config_count = SPECIFIC_CONFIG_COUNT   # تعداد کانفیگ‌های مورد نیاز در صورت عدم استفاده از حداکثر قدرت
         self.MAX_CONFIG_AGE_DAYS = MAX_CONFIG_AGE_DAYS       # حداکثر عمر کانفیگ‌های معتبر
+
+        logger.info(f"حالت واکشی: {'حداکثر قدرت' if self.use_maximum_power else f'تعداد مشخص ({self.specific_config_count} کانفیگ)'}")
+        logger.info(f"حداکثر عمر کانفیگ‌ها: {self.MAX_CONFIG_AGE_DAYS} روز.")
         
         # بارگذاری URLهای منبع اولیه از user_settings.py
         if initial_source_urls is None:
             initial_urls_list = SOURCE_URLS
+            logger.info(f"URLهای منبع اولیه از 'user_settings.py' بارگذاری شدند. ({len(initial_urls_list)} URL)")
         else:
             initial_urls_list = initial_source_urls
+            logger.info(f"URLهای منبع اولیه به صورت دستی ارائه شدند. ({len(initial_urls_list)} URL)")
+
 
         initial_channel_configs = [ChannelConfig(url=url) for url in initial_urls_list]
         # حذف URLهای تکراری از لیست اولیه کانال‌ها
         self.SOURCE_URLS = self._remove_duplicate_urls(initial_channel_configs) 
+        logger.info(f"پس از حذف تکراری‌ها، {len(self.SOURCE_URLS)} کانال منحصر به فرد برای پردازش باقی ماند.")
         
         self.SUPPORTED_PROTOCOLS = self._initialize_protocols() # مقداردهی اولیه پروتکل‌های پشتیبانی شده
+        logger.info(f"پروتکل‌های پشتیبانی شده اولیه شدند. ({len(self.SUPPORTED_PROTOCOLS)} پروتکل)")
+        logger.debug(f"وضعیت فعال بودن پروتکل‌ها: {self._get_protocol_enablement_status()}")
+
         self._initialize_settings()                             # مقداردهی اولیه سایر تنظیمات
         self._set_smart_limits()                                # تنظیم محدودیت‌های هوشمند
+        logger.info("پیکربندی ProxyConfig با موفقیت انجام شد.")
+
+    def _get_protocol_enablement_status(self) -> str:
+        """برای لاگ‌گیری، وضعیت فعال بودن پروتکل‌ها را برمی‌گرداند."""
+        status = []
+        for p, info in self.SUPPORTED_PROTOCOLS.items():
+            status.append(f"{p.replace('://', '')}: {'فعال' if info['enabled'] else 'غیرفعال'}")
+        return ", ".join(status)
 
     def _initialize_protocols(self) -> Dict:
         """
@@ -122,7 +142,7 @@ class ProxyConfig:
             "wireguard://": {"priority": 1, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("wireguard://", False)},
             "hysteria2://": {"priority": 2, "aliases": ["hy2://"], "enabled": ENABLED_PROTOCOLS.get("hysteria2://", False)},
             "vless://": {"priority": 2, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("vless://", False)},
-            "vmess://": {"priority": 1, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("vmess://", False)},
+            "vmess://": {"priority": 1, "aliases": [], "enabled": ENABLEED_PROTOCOLS.get("vmess://", False)},
             "ss://": {"priority": 2, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("ss://", False)},
             "trojan://": {"priority": 2, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("trojan://", False)},
             "tuic://": {"priority": 1, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("tuic://", False)},
@@ -155,6 +175,7 @@ class ProxyConfig:
         self.MAX_RETRIES = min(10, max(1, 5))             # حداکثر تلاش مجدد برای درخواست‌های HTTP
         self.RETRY_DELAY = min(60, max(5, 15))            # تاخیر بین تلاش‌های مجدد (ثانیه)
         self.REQUEST_TIMEOUT = min(120, max(10, 60))      # مهلت زمانی برای درخواست‌های HTTP (ثانیه)
+        logger.info(f"تنظیمات واکشی: مهلت زمانی={self.REQUEST_TIMEOUT}s، حداکثر تلاش مجدد HTTP={self.MAX_RETRIES}، تاخیر تلاش مجدد={self.RETRY_DELAY}s.")
         
         self.HEADERS = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -170,25 +191,27 @@ class ProxyConfig:
         """
         if self.use_maximum_power:
             self._set_maximum_power_mode()
+            logger.info("محدودیت‌ها برای حالت 'حداکثر قدرت' تنظیم شدند.")
         else:
             self._set_specific_count_mode()
+            logger.info("محدودیت‌ها برای حالت 'تعداد مشخص' تنظیم شدند.")
 
     def _set_maximum_power_mode(self):
         """
         تنظیم محدودیت‌ها برای حالت "حداکثر قدرت".
         در این حالت، سیستم سعی می‌کند تا حد ممکن کانفیگ جمع‌آوری کند.
         """
-        max_configs = 10000 # حداکثر کانفیگ برای هر پروتکل در این حالت می‌تواند بسیار بالا باشد
+        max_configs_val = 10000 # حداکثر کانفیگ برای هر پروتکل در این حالت می‌تواند بسیار بالا باشد
         
         for protocol in self.SUPPORTED_PROTOCOLS:
             self.SUPPORTED_PROTOCOLS[protocol].update({
                 "min_configs": 1,          # حداقل 1 کانفیگ برای هر پروتکل (اگر یافت شود)
-                "max_configs": max_configs, # حداکثر کانفیگ برای هر پروتکل در این حالت
+                "max_configs": max_configs_val, # حداکثر کانفیگ برای هر پروتکل در این حالت
                 "flexible_max": True       # حداکثر تعداد منعطف است (تا max_configs)
             })
         
         self.MIN_CONFIGS_PER_CHANNEL = 1    # حداقل کانفیگ در هر کانال
-        self.MAX_CONFIGS_PER_CHANNEL = max_configs # حداکثر کانفیگ در هر کانال
+        self.MAX_CONFIGS_PER_CHANNEL = max_configs_val # حداکثر کانفیگ در هر کانال
         self.MAX_RETRIES = min(10, max(1, 10)) # افزایش تلاش مجدد HTTP
         self.CHANNEL_RETRY_LIMIT = min(10, max(1, 10)) # افزایش تلاش مجدد کانال
         self.REQUEST_TIMEOUT = min(120, max(30, 90)) # افزایش مهلت زمانی درخواست
@@ -258,6 +281,7 @@ class ProxyConfig:
         """
         حذف URLهای تکراری کانال از لیست اولیه بر اساس URLهای نرمال شده.
         """
+        logger.debug("در حال حذف URLهای تکراری از لیست کانال‌های اولیه...")
         try:
             seen_normalized_urls = {} # دیکشنری برای نگهداری URLهای نرمال شده دیده شده
             unique_configs = []      # لیست کانفیگ‌های منحصر به فرد
@@ -287,6 +311,7 @@ class ProxyConfig:
                 logger.error("هیچ منبع معتبری یافت نشد. فایل کانفیگ خالی ایجاد شد.")
                 return []
                 
+            logger.debug(f"حذف تکراری‌ها کامل شد. {len(unique_configs)} کانال منحصر به فرد باقی ماند.")
             return unique_configs
         except Exception as e:
             logger.error(f"خطا در حذف URLهای تکراری: {str(e)}")
@@ -378,6 +403,7 @@ class ProxyConfig:
             os.makedirs(os.path.dirname(self.OUTPUT_FILE), exist_ok=True)
             with open(self.OUTPUT_FILE, 'w', encoding='utf-8') as f:
                 f.write("")
+            logger.info(f"فایل کانفیگ خالی در '{self.OUTPUT_FILE}' ایجاد شد.")
             return True
         except Exception as e:
             logger.error(f"خطا در ایجاد فایل کانفیگ خالی: {str(e)}")
