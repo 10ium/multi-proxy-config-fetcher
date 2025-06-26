@@ -35,10 +35,8 @@ class ConnectionTester:
         self.get_location = get_location_func # تابعی برای دریافت موقعیت جغرافیایی
         
         # پروتکل‌هایی که Mihomo به صورت مستقیم و ساده پشتیبانی می‌کند و می‌توانیم تست کنیم.
-        # این لیست را می‌توان با توجه به نیاز و آزمایش‌های واقعی Mihomo به‌روزرسانی کرد.
         self.mihomo_testable_protocols = {
             "vmess://", "vless://", "trojan://", "ss://", "hysteria2://", "hysteria://", "tuic://", "juicity://",
-            "hysteria://", # Hysteria v1 معمولاً در Mihomo پشتیبانی می‌شود.
         }
         logger.info("ConnectionTester با موفقیت مقداردهی اولیه شد.")
 
@@ -51,10 +49,8 @@ class ConnectionTester:
             logger.debug(f"آدرس یا پورت برای تست پینگ نامعتبر است: {address}:{port}")
             return False
         try:
-            # سعی می‌کند نام دامنه را به IP تبدیل کند
             ip = socket.gethostbyname(address)
             with socket.create_connection((ip, port), timeout=timeout) as sock:
-                # اگر اتصال برقرار شود، یعنی پورت باز است
                 logger.debug(f"تست پینگ موفق برای {address}:{port} (IP: {ip}).")
                 return True
         except (socket.gaierror, socket.timeout, ConnectionRefusedError, OSError) as e:
@@ -64,6 +60,23 @@ class ConnectionTester:
             logger.error(f"خطای ناشناخته در تست پینگ برای {address}:{port}: {e}")
             return False
 
+    def _wait_for_port(self, host: str, port: int, timeout: int = 10, interval: float = 0.5) -> bool:
+        """
+        منتظر می‌ماند تا یک پورت خاص روی یک هاست باز شود.
+        """
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                with socket.create_connection((host, port), timeout=1) as s:
+                    return True
+            except (socket.timeout, ConnectionRefusedError, OSError):
+                time.sleep(interval)
+            except Exception as e:
+                logger.debug(f"خطا در انتظار برای پورت {host}:{port}: {e}")
+                return False
+        logger.debug(f"پورت {host}:{port} پس از {timeout} ثانیه باز نشد.")
+        return False
+
     def _test_with_mihomo(self, config_string: str) -> bool:
         """
         تست عملکردی یک کانفیگ با استفاده از Mihomo CLI.
@@ -71,25 +84,15 @@ class ConnectionTester:
         """
         logger.debug(f"شروع تست Mihomo برای کانفیگ: {config_string[:min(len(config_string), 50)]}...")
         
-        # Mihomo نیاز به یک فایل کانفیگ YAML دارد.
-        # ما یک فایل موقت ایجاد می‌کنیم.
-        # توجه: Mihomo می تواند URL های کانفیگ را مستقیماً در بخش 'proxies' بپذیرد
-        # اما برای اطمینان بیشتر و کنترل بیشتر، می توان آن را در یک فایل YAML به صورت 'url' یا 'config' قرار داد.
-        # در اینجا از نوع 'external' استفاده می‌کنیم که به آن یک URL می‌دهیم.
-        # اگر Mihomo مستقیماً string config را در proxies/url قبول نکرد، باید آن را parse کرده و به YAML تبدیل کنیم.
-        # اما برای پروتکل‌های استاندارد (Vmess, Vless, etc.) معمولاً مستقیماً کار می‌کند.
-
         mihomo_config_content = {
             "port": 7890,  # پورت داخلی Mihomo
-            "log-level": "info",
+            "log-level": "info", # سطح لاگ‌گیری برای Mihomo
             "mode": "rule",
             "proxies": [
                 {
                     "name": "test-proxy",
-                    # Mihomo می‌تواند URL کانفیگ را مستقیماً بپذیرد.
-                    # اگر Mihomo این را نپذیرفت، باید آن را به فرمت YAML/JSON Mihomo تبدیل کنید.
                     "type": "external",
-                    "url": config_string # URL کانفیگ پروکسی شما
+                    "url": config_string
                 }
             ],
             "proxy-groups": [
@@ -100,44 +103,33 @@ class ConnectionTester:
                 }
             ],
             "rules": [
-                "MATCH,proxy" # تمام ترافیک را از طریق پراکسی ارسال کن
+                "MATCH,proxy" 
             ]
         }
 
         temp_config_file_path = None
-        process = None # مقداردهی اولیه برای استفاده در بلوک finally
+        process = None 
         try:
-            # ایجاد یک فایل موقت برای کانفیگ Mihomo
             with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.yaml', encoding='utf-8') as temp_config_file:
-                # استفاده از json.dump برای تولید YAML ساده. Mihomo معمولاً JSON را هم می‌پذیرد
                 json.dump(mihomo_config_content, temp_config_file, indent=2) 
                 temp_config_file_path = temp_config_file.name
             
-            # دستور اجرای Mihomo (فرض می‌کنیم mihomo در PATH موجود است)
-            # -f: مشخص کردن فایل کانفیگ
-            # -d: مشخص کردن دایرکتوری داده (برای لاگ‌ها و cache)
-            # --no-autoclose: برای جلوگیری از بسته شدن فوری Mihomo در تست (در برخی نسخه‌ها)
             mihomo_command = [
                 "mihomo", 
                 "-f", temp_config_file_path, 
-                "-d", tempfile.gettempdir(), # از یک دایرکتوری موقت برای داده‌ها استفاده کن
-                # "--no-autoclose" # این گزینه ممکن است در همه نسخه‌ها نباشد، حذف شود اگر مشکل ایجاد کرد
+                "-d", tempfile.gettempdir(), 
             ]
 
             # اجرای Mihomo به عنوان یک فرآیند جداگانه
-            # stdout و stderr به PIPE هدایت می‌شوند تا بتوانیم خروجی را بخوانیم
-            # preexec_fn=os.setsid برای ایجاد یک session جدید و جلوگیری از بسته شدن Mihomo با بسته شدن پایتون
+            # stdout و stderr به PIPE هدایت می‌شوند تا بتوانیم لاگ‌های Mihomo را ببینیم
             process = subprocess.Popen(mihomo_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, preexec_fn=os.setsid)
             
-            # صبر کردن کمی برای اینکه Mihomo بالا بیاید و کانفیگ را بارگذاری کند
-            time.sleep(2) 
+            # **تغییر یافته**: منتظر می‌مانیم تا پورت Mihomo باز شود
+            if not self._wait_for_port("127.0.0.1", 7890, timeout=10): # مهلت 10 ثانیه برای باز شدن پورت
+                logger.warning(f"پورت Mihomo باز نشد. تست Mihomo ناموفق برای کانفیگ: {config_string[:min(len(config_string), 50)]}...")
+                return False
 
-            # تلاش برای اتصال از طریق Mihomo
-            # Mihomo پورت 7890 را برای SOCKS5 و HTTP/HTTPS باز می‌کند
-            test_proxy_url = "http://127.0.0.1:7890" # پورت Mihomo
-            
-            # یک درخواست کوچک به یک سرور معروف ارسال کنید (مثلا Cloudflare's captive portal check)
-            # این URL برای تست اتصال اینترنت بدون redirection است.
+            test_proxy_url = "http://127.0.0.1:7890" 
             test_target_url = "http://cp.cloudflare.com/"
             
             try:
@@ -161,12 +153,21 @@ class ConnectionTester:
             return False
         finally:
             # اطمینان از terminate کردن Mihomo
-            if process and process.poll() is None: # اگر فرآیند هنوز در حال اجراست
-                try:
-                    os.killpg(os.getpgid(process.pid), 9) # Kill the process group
-                    process.wait(timeout=1) # صبر کن تا فرآیند بسته شود
-                except OSError as e:
-                    logger.debug(f"خطا در kill کردن فرآیند Mihomo: {e}")
+            if process:
+                # گرفتن خروجی stdout و stderr قبل از terminate
+                stdout, stderr = process.communicate(timeout=5) # صبر کن تا خروجی کامل شود
+                if stdout:
+                    logger.debug(f"Mihomo stdout: {stdout}")
+                if stderr:
+                    logger.debug(f"Mihomo stderr: {stderr}")
+
+                if process.poll() is None: # اگر فرآیند هنوز در حال اجراست
+                    try:
+                        os.killpg(os.getpgid(process.pid), 9) # Kill the process group
+                        process.wait(timeout=1) 
+                    except OSError as e:
+                        logger.debug(f"خطا در kill کردن فرآیند Mihomo: {e}")
+            
             # پاکسازی فایل کانفیگ موقت
             if temp_config_file_path and os.path.exists(temp_config_file_path):
                 os.remove(temp_config_file_path)
@@ -184,16 +185,41 @@ class ConnectionTester:
         
         # 1. تست پینگ/پورت سریع
         server_address = self.validator.get_server_address(config_string, protocol)
-        parsed_url = urlparse(config_string)
-        port = parsed_url.port # پورت را از URLparse استخراج کن
         
-        if not server_address or not port:
-            logger.debug(f"آدرس سرور یا پورت برای کانفیگ '{config_string[:min(len(config_string), 50)]}...' یافت نشد. تست پینگ/عملکردی نادیده گرفته شد.")
+        # برخی پروتکل‌ها (مانند WARP) ممکن است آدرس سرور قابل پینگ مستقیم نداشته باشند.
+        # یا پورت آنها در URL نباشد.
+        # در این صورت، تست پینگ ممکن است نامناسب باشد.
+        # برای WARP، پورت معمولاً 80 یا 443 است، اما در URL WARP ذکر نمی‌شود.
+        # برای پروتکل‌هایی که پورت در URL نیست (مثل WARP)، باید پورت پیش‌فرض را تعیین کرد.
+        
+        port = None
+        try:
+            parsed_url = urlparse(config_string)
+            port = parsed_url.port
+        except ValueError:
+            pass # ممکن است parse_url خطا دهد
+        
+        # تعیین پورت پیش‌فرض برای پروتکل‌هایی که پورت در URL آن‌ها وجود ندارد
+        if not port:
+            if protocol == "warp://":
+                port = 80 # یا 443 برای HTTPS
+            # می توانید پورت های پیش فرض دیگر پروتکل ها را در اینجا اضافه کنید.
+            # مثلاً 22 برای SSH اگر پورت در URL نیست
+            # یا 443 برای TLS-based protocols
+            
+        if not server_address: # اگر آدرس سرور قابل استخراج نیست، تست را رد کن
+            logger.debug(f"آدرس سرور برای کانفیگ '{config_string[:min(len(config_string), 50)]}...' یافت نشد. تست نادیده گرفته شد.")
             return None
+        
+        # تنها اگر پورت مشخص بود و پروتکل از نوعی بود که تست پینگ برایش معنی داشت
+        # پروتکل هایی که صرفا بر اساس پورت کار نمی کنند (مانند WARP) را از تست پینگ اولیه مستثنی کنید.
+        if port and protocol not in ["warp://"]: # WARP معمولاً تست پینگ مستقیم ندارد
+            if not self._ping_test(server_address, port):
+                logger.debug(f"کانفیگ '{config_string[:min(len(config_string), 50)]}...' تست پینگ/پورت را رد کرد. نادیده گرفته شد.")
+                return None
+        elif not port:
+            logger.debug(f"پورت برای کانفیگ '{config_string[:min(len(config_string), 50)]}...' یافت نشد. تست پینگ نادیده گرفته شد.")
 
-        if not self._ping_test(server_address, port):
-            logger.debug(f"کانفیگ '{config_string[:min(len(config_string), 50)]}...' تست پینگ/پورت را رد کرد. نادیده گرفته شد.")
-            return None
 
         # 2. تست عملکردی با Mihomo (فقط برای پروتکل‌های پشتیبانی شده)
         if protocol in self.mihomo_testable_protocols:
@@ -202,10 +228,10 @@ class ConnectionTester:
                 return None
             logger.debug(f"کانفیگ '{config_string[:min(len(config_string), 50)]}...' تست Mihomo را با موفقیت پشت سر گذاشت.")
         else:
-            logger.debug(f"پروتکل '{protocol}' توسط Mihomo تست نمی‌شود. از تست Mihomo صرف نظر شد.")
-            # اگر پروتکل توسط Mihomo تست نمی‌شود، بعد از تست پینگ آن را معتبر فرض می‌کنیم.
+            logger.debug(f"پروتکل '{protocol}' توسط Mihomo تست نمی‌شود. از تست Mihomo صرف نظر شد و معتبر فرض شد.")
+            # اگر پروتکل توسط Mihomo تست نمی‌شود، بعد از تست پینگ (در صورت انجام) آن را معتبر فرض می‌کنیم.
 
-        # اگر هر دو تست (یا فقط تست پینگ) موفقیت آمیز بود، پرچم و کشور را اضافه می‌کنیم.
+        # اگر تست‌ها (یا تست پینگ و سپس عدم نیاز به تست Mihomo) موفقیت آمیز بود، پرچم و کشور را اضافه می‌کنیم.
         flag, country = self.get_location(server_address) # استفاده از تابع تزریق شده
         
         enriched_config = {
