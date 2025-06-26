@@ -10,20 +10,21 @@ from typing import List, Dict, Optional, Set, Tuple, Any
 from bs4 import BeautifulSoup
 import base64 
 
-import concurrent.futures # برای واکشی همزمان
-import threading # برای محافظت از منابع مشترک در حالت همزمان
+import concurrent.futures
+import threading
 
 from config import ProxyConfig, ChannelConfig
 from config_validator import ConfigValidator
 from user_settings import SOURCE_URLS 
 
 # پیکربندی لاگ‌گیری (از config.py ارث می‌برد یا اینجا تنظیم می‌کند)
+# **تغییر یافته**: سطح لاگ‌گیری به DEBUG تغییر یافت تا جزئیات کامل نمایش داده شوند.
 logging.basicConfig(
-    level=logging.INFO, # سطح پیش‌فرض لاگ‌گیری: INFO. پیام‌های DEBUG نمایش داده نمی‌شوند.
+    level=logging.DEBUG, # <--- اینجا به DEBUG تغییر یافت
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('proxy_fetcher.log'), # لاگ در فایل
-        logging.StreamHandler() # لاگ در کنسول
+        logging.FileHandler('proxy_fetcher.log'),
+        logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
@@ -213,7 +214,7 @@ class ConfigFetcher:
         backoff = 1
         for attempt in range(self.config.MAX_RETRIES):
             try:
-                # لاگ INFO برای شروع تلاش واکشی، می‌تواند در صورت لزوم به DEBUG تغییر یابد.
+                # **تغییر یافته**: سطح لاگ INFO به DEBUG تغییر یافت تا شلوغ نشود.
                 logger.debug(f"در حال تلاش برای واکشی '{url}' (تلاش {attempt + 1}/{self.config.MAX_RETRIES})")
                 response = self.session.get(url, timeout=self.config.REQUEST_TIMEOUT)
                 response.raise_for_status() 
@@ -234,7 +235,7 @@ class ConfigFetcher:
         """
         https_url = self.validator.convert_ssconf_to_https(url)
         configs = []
-        logger.debug(f"در حال واکشی کانفیگ‌های ssconf از: '{https_url}'") # تغییر سطح به DEBUG
+        logger.debug(f"در حال واکشی کانفیگ‌های ssconf از: '{https_url}'") 
         
         response = self.fetch_with_retry(https_url)
         if response and response.text.strip():
@@ -246,7 +247,7 @@ class ConfigFetcher:
             
             found_configs = self.validator.split_configs(text)
             configs.extend(found_configs)
-            logger.debug(f"{len(found_configs)} کانفیگ از ssconf '{https_url}' یافت شد.") # تغییر سطح به DEBUG
+            logger.debug(f"{len(found_configs)} کانفیگ از ssconf '{https_url}' یافت شد.") 
         else:
             logger.warning(f"هیچ محتوایی از ssconf '{https_url}' دریافت نشد یا خالی بود.")
             
@@ -318,13 +319,14 @@ class ConfigFetcher:
                 self.config.update_channel_stats(channel, True, response_time)
                 channel.retry_level = 0
                 channel.next_check_time = None
-                # لاگ INFO اینجا می‌تواند حذف شود یا به DEBUG تغییر یابد زیرا fetch_all_configs خلاصه‌ای ارائه می‌دهد.
-                # logger.info(f"کانال '{channel.url}' با موفقیت {len(current_channel_valid_processed_configs)} کانفیگ معتبر ارائه داد. سطح تلاش مجدد بازنشانی شد.")
+                # **تغییر یافته**: سطح لاگ به DEBUG تغییر یافت.
+                logger.debug(f"کانال '{channel.url}' با موفقیت {len(current_channel_valid_processed_configs)} کانفیگ معتبر ارائه داد. سطح تلاش مجدد بازنشانی شد.")
             else:
                 self.config.update_channel_stats(channel, False)
                 channel.retry_level = min(channel.retry_level + 1, self.max_retry_level)
                 channel.next_check_time = datetime.now(timezone.utc) + self.retry_intervals[channel.retry_level]
-                # logger.warning(f"کانال '{channel.url}' کانفیگ معتبری نداشت. سطح تلاش مجدد به {channel.retry_level} افزایش یافت. بررسی بعدی در: {channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+                # **تغییر یافته**: سطح لاگ به DEBUG تغییر یافت.
+                logger.debug(f"کانال '{channel.url}' کانفیگ معتبری نداشت. سطح تلاش مجدد به {channel.retry_level} افزایش یافت. بررسی بعدی در: {channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
 
             return current_channel_valid_processed_configs
 
@@ -333,7 +335,8 @@ class ConfigFetcher:
             self.config.update_channel_stats(channel, False)
             channel.retry_level = min(channel.retry_level + 1, self.max_retry_level)
             channel.next_check_time = datetime.now(timezone.utc) + self.retry_intervals[channel.retry_level]
-            # logger.warning(f"واکشی از کانال '{channel.url}' ناموفق بود. سطح تلاش مجدد به {channel.retry_level} افزایش یافت. بررسی بعدی در: {channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            # **تغییر یافته**: سطح لاگ به DEBUG تغییر یافت.
+            logger.debug(f"واکشی از کانال '{channel.url}' ناموفق بود. سطح تلاش مجدد به {channel.retry_level} افزایش یافت. بررسی بعدی در: {channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
             return current_channel_valid_processed_configs
 
         response_time = time.time() - start_time
@@ -437,17 +440,13 @@ class ConfigFetcher:
             self.config.adjust_protocol_limits(channel)
             channel.retry_level = 0
             channel.next_check_time = None
-            # لاگ INFO اینجا می‌تواند حذف شود یا به DEBUG تغییر یابد
-            # logger.info(f"کانال '{channel.url}' با موفقیت {len(current_channel_valid_processed_configs)} کانفیگ معتبر ارائه داد. سطح تلاش مجدد بازنشانی شد.")
         else:
             self.config.update_channel_stats(channel, False)
             channel.retry_level = min(channel.retry_level + 1, self.max_retry_level)
             channel.next_check_time = datetime.now(timezone.utc) + self.retry_intervals[channel.retry_level]
-            # لاگ WARNING اینجا می‌تواند حذف شود یا به DEBUG تغییر یابد
-            # logger.warning(f"تعداد کافی کانفیگ در کانال '{channel.url}' یافت نشد: {len(current_channel_valid_processed_configs)} کانفیگ. سطح تلاش مجدد به {channel.retry_level} افزایش یافت. بررسی بعدی در: {channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}. ")
         
-        # لاگ INFO اینجا می‌تواند حذف شود یا به DEBUG تغییر یابد
-        # logger.info(f"پایان واکشی از منبع: '{channel.url}'. مجموع کانفیگ‌های معتبر و پردازش شده: {len(current_channel_valid_processed_configs)}.")
+        # **تغییر یافته**: لاگ پایان واکشی از منبع به INFO (خلاصه)
+        logger.info(f"پایان واکشی از منبع: '{channel.url}'. کانفیگ‌های معتبر پیدا شده: {len(current_channel_valid_processed_configs)}.")
         return current_channel_valid_processed_configs
 
     def process_config(self, config_string: str, channel: ChannelConfig) -> Optional[Dict[str, str]]:
@@ -465,7 +464,7 @@ class ConfigFetcher:
             config_string = self.validator.normalize_hysteria2_protocol(config_string)
             logger.debug(f"نرمال‌سازی 'hy2://' به 'hysteria2://' برای کانفیگ: '{config_string[:min(len(config_string), 50)]}...'")
         elif config_string.startswith('hy1://'):
-            config_string = config_string.replace('hy1://', 'hysteria://', 1) # تبدیل alias به پروتکل اصلی
+            config_string = config_string.replace('hy1://', 'hysteria://', 1) 
             logger.debug(f"نرمال‌سازی 'hy1://' به 'hysteria://' برای کانفیگ: '{config_string[:min(len(config_string), 50)]}...'")
             
         # استخراج لینک‌های کانال تلگرام از مشخصات خود کانفیگ
@@ -490,17 +489,15 @@ class ConfigFetcher:
                 for alias in aliases:
                     if config_string.startswith(alias):
                         protocol_match = True
-                        config_string = config_string.replace(alias, protocol_prefix, 1) # جایگزیسی alias با پروتکل اصلی
+                        config_string = config_string.replace(alias, protocol_prefix, 1)
                         actual_protocol = protocol_prefix
                         break
                         
             if protocol_match:
-                # اگر پروتکل فعال نیست، کانفیگ را نادیده بگیرید
                 if not self.config.is_protocol_enabled(actual_protocol):
                     logger.debug(f"پروتکل '{actual_protocol}' فعال نیست. کانفیگ نادیده گرفته شد: '{config_string[:min(len(config_string), 50)]}...'.")
                     return None 
                 
-                # پاکسازی خاص برای پروتکل‌های خاص (VMess و SSR)
                 if actual_protocol == "vmess://":
                     config_string = self.validator.clean_vmess_config(config_string)
                     logger.debug(f"پاکسازی VMess: '{config_string[:min(len(config_string), 50)]}...'")
@@ -508,10 +505,8 @@ class ConfigFetcher:
                     config_string = self.validator.clean_ssr_config(config_string)
                     logger.debug(f"پاکسازی SSR: '{config_string[:min(len(config_string), 50)]}...'")
                 
-                # پاکسازی عمومی کانفیگ (حذف کاراکترهای نامرئی، ایموجی و فضاهای اضافی)
                 clean_config = self.validator.clean_config(config_string)
                 
-                # اعتبارسنجی نهایی و دقیق پروتکل خاص
                 if self.validator.validate_protocol_config(clean_config, actual_protocol):
                     canonical_id = self.validator.get_canonical_id(clean_config, actual_protocol)
                     
@@ -519,7 +514,7 @@ class ConfigFetcher:
                         logger.debug(f"شناسه کانونی برای کانفیگ '{actual_protocol}' تولید نشد. نادیده گرفته شد: '{clean_config[:min(len(clean_config), 50)]}...'.")
                         return None
                         
-                    with self._lock: # محافظت از seen_configs در محیط همزمان
+                    with self._lock: 
                         if canonical_id not in self.seen_configs:
                             server_address = self.validator.get_server_address(clean_config, actual_protocol)
                             if server_address:
@@ -531,6 +526,7 @@ class ConfigFetcher:
                             
                             self.seen_configs.add(canonical_id) 
                             self.protocol_counts[actual_protocol] += 1
+                            # **تغییر یافته**: لاگ نمایش کانفیگ منحصر به فرد به DEBUG تغییر یافت.
                             logger.debug(f"کانفیگ منحصر به فرد '{actual_protocol}' یافت شد: '{clean_config[:min(len(clean_config), 50)]}...' (ID: {canonical_id[:min(len(canonical_id), 20)]}...).")
                             
                             return {
@@ -541,7 +537,8 @@ class ConfigFetcher:
                                 'canonical_id': canonical_id 
                             }
                         else:
-                            logger.info(f"کانفیگ تکراری '{actual_protocol}' با شناسه کانونی {canonical_id[:min(len(canonical_id), 20)]}... نادیده گرفته شد: '{clean_config[:min(len(clean_config), 50)]}...'.")
+                            # **تغییر یافته**: لاگ کانفیگ تکراری به DEBUG تغییر یافت.
+                            logger.debug(f"کانفیگ تکراری '{actual_protocol}' با شناسه کانونی {canonical_id[:min(len(canonical_id), 20)]}... نادیده گرفته شد: '{clean_config[:min(len(clean_config), 50)]}...'.")
                 else:
                     logger.debug(f"اعتبارسنجی پروتکل '{actual_protocol}' برای کانفیگ '{clean_config[:min(len(clean_config), 50)]}...' ناموفق بود. نادیده گرفته شد.")
                 break 
@@ -663,31 +660,26 @@ class ConfigFetcher:
         logger.info(f"شروع واکشی کانفیگ‌ها از {total_channels_to_process} کانال فعال به صورت همزمان (Parallel Fetching برای افزایش سرعت).")
         
         # **تغییر یافته**: استفاده از ThreadPoolExecutor برای واکشی موازی
-        # max_workers را می‌توان بر اساس تعداد CPUهای موجود یا پهنای باند شبکه تنظیم کرد.
-        # تعداد 10 تاپیک برای تعادل بین استفاده از منابع و جلوگیری از مسدود شدن IP مناسب است.
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, total_channels_to_process + 1)) as executor:
-            # ارسال هر کانال به یک Thread برای واکشی
             futures = {executor.submit(self.fetch_configs_from_source, channel): channel for channel in channels_to_process}
             
-            # **جدید**: پیگیری پیشرفت و لاگ کردن نتایج هر کانال به محض تکمیل
             processed_channels_count = 0
             for future in concurrent.futures.as_completed(futures):
-                channel_processed = futures[future]
+                channel = futures[future]
                 processed_channels_count += 1
                 progress_percentage = (processed_channels_count / total_channels_to_process) * 100
                 
                 try:
                     result_list = future.result() # دریافت نتیجه (لیست کانفیگ‌های پردازش شده)
                     all_configs.extend(result_list)
-                    logger.info(f"پیشرفت: {progress_percentage:.2f}% ({processed_channels_count}/{total_channels_to_process}) - کانال '{channel_processed.url}' با {len(result_list)} کانفیگ معتبر پردازش شد. (کل کانفیگ‌های جمع‌آوری شده تاکنون: {len(all_configs)})")
+                    logger.info(f"پیشرفت: {progress_percentage:.2f}% ({processed_channels_count}/{total_channels_to_process}) - کانال '{channel.url}' پردازش شد. (کانفیگ‌های معتبر پیدا شده از این کانال: {len(result_list)} | کل کانفیگ‌های جمع‌آوری شده تاکنون: {len(all_configs)})") # لاگ جدید و واضح‌تر
                 except Exception as exc:
-                    logger.error(f"پیشرفت: {progress_percentage:.2f}% ({processed_channels_count}/{total_channels_to_process}) - کانال '{channel_processed.url}' در حین واکشی موازی با خطا مواجه شد: {exc}", exc_info=True)
+                    logger.error(f"پیشرفت: {progress_percentage:.2f}% ({processed_channels_count}/{total_channels_to_process}) - کانال '{channel.url}' در حین واکشی موازی با خطا مواجه شد: {exc}", exc_info=True)
 
 
         if all_configs:
             logger.info(f"واکشی از همه کانال‌ها تکمیل شد. مجموعاً {len(all_configs)} کانفیگ خام جمع‌آوری شد.")
             
-            # **تغییر یافته**: Unique کردن نهایی بر اساس شناسه کانونی
             final_unique_configs_list = []
             seen_canonical_ids_for_final_list = set()
             for cfg_dict in all_configs:
@@ -704,7 +696,6 @@ class ConfigFetcher:
             logger.warning("هیچ کانفیگ معتبری پس از واکشی و پردازش یافت نشد!")
             return []
 
-    # --- توابع کمکی که به متدهای کلاس تبدیل شده‌اند ---
     def _save_base64_file(self, file_path: str, content: str):
         """یک محتوا را Base64 می‌کند و در یک فایل ذخیره می‌کند."""
         try:
@@ -762,6 +753,7 @@ class ConfigFetcher:
                  protocol_configs_separated[protocol_full_name].append(cfg_dict)
             else:
                 logger.warning(f"پروتکل '{protocol_full_name}' در لیست پروتکل‌های پشتیبانی شده برای تفکیک یافت نشد.")
+
 
         for protocol_full_name, cfg_list_of_dicts in protocol_configs_separated.items():
             if not cfg_list_of_dicts:
