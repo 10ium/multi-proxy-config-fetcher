@@ -7,13 +7,14 @@ from urllib.parse import unquote, urlparse, parse_qs
 class ConfigValidator:
     """
     کلاس ConfigValidator برای اعتبارسنجی، پاکسازی و استخراج اطلاعات از رشته‌های کانفیگ پراکسی.
-    **بهبود یافته برای حذف دقیق تکراری‌ها (با استفاده از شناسه‌های کانونی).**
+    این کلاس مسئول شناسایی، تجزیه و اعتبارسنجی پروتکل‌های مختلف و همچنین استخراج
+    شناسه‌های کانونی برای حذف دقیق تکراری‌ها است.
     """
     @staticmethod
     def is_base64(s: str) -> bool:
         """بررسی می‌کند که آیا یک رشته Base64 معتبر است یا خیر."""
         try:
-            s = s.rstrip('=')
+            s = s.rstrip('=') # حذف پدینگ برای بررسی راحت‌تر
             return bool(re.match(r'^[A-Za-z0-9+/\-_]*$', s))
         except:
             return False
@@ -22,9 +23,9 @@ class ConfigValidator:
     def decode_base64_url(s: str) -> Optional[bytes]:
         """رمزگشایی یک رشته Base64 URL-safe."""
         try:
-            s = s.replace('-', '+').replace('_', '/')
+            s = s.replace('-', '+').replace('_', '/') # تبدیل فرمت URL-safe به فرمت استاندارد Base64
             padding = 4 - (len(s) % 4)
-            if padding != 4:
+            if padding != 4: # اضافه کردن پدینگ '=' در صورت نیاز
                 s += '=' * padding
             return base64.b64decode(s)
         except:
@@ -47,6 +48,7 @@ class ConfigValidator:
         """پاکسازی کانفیگ VMess با حذف بخش‌های اضافی بعد از رشته Base64 اصلی."""
         if "vmess://" in config:
             base64_part = config[8:]
+            # فقط کاراکترهای مجاز Base64 (شامل - و _ برای URL-safe) را نگه دارید
             base64_clean = re.split(r'[^A-Za-z0-9+/=_-]', base64_part)[0]
             return f"vmess://{base64_clean}"
         return config
@@ -62,11 +64,12 @@ class ConfigValidator:
     def clean_ssr_config(config: str) -> str:
         """پاکسازی کانفیگ SSR، اطمینان از شروع با ssr:// و Base64 معتبر."""
         if config.startswith("ssr://"):
-            parts = config[6:].split("/?")
+            parts = config[6:].split("/?") # جدا کردن قبل از پارامترها
             base64_part = parts[0]
+            # اطمینان از معتبر بودن بخش Base64
             if ConfigValidator.is_base64(base64_part):
                 return config
-        return config
+        return config # اگر فرمت SSR معتبر نبود، اصلی را برگردانید
 
     @staticmethod
     def is_vmess_config(config: str) -> bool:
@@ -77,10 +80,10 @@ class ConfigValidator:
             base64_part = config[8:]
             decoded = ConfigValidator.decode_base64_url(base64_part)
             if decoded:
-                json.loads(decoded)
+                json.loads(decoded) # تلاش برای بارگذاری به عنوان JSON
                 return True
             return False
-        except:
+        except Exception:
             return False
     
     @staticmethod
@@ -89,13 +92,13 @@ class ConfigValidator:
         try:
             if not config.startswith('ssr://'):
                 return False
-            base64_part = config[6:].split('/?')[0]
+            base64_part = config[6:].split('/?')[0] # گرفتن بخش قبل از پارامترهای اختیاری
             decoded_bytes = ConfigValidator.decode_base64_url(base64_part)
             if not decoded_bytes:
                 return False
-            decoded_str = decoded_bytes.decode('utf-8', errors='ignore')
+            decoded_str = decoded_bytes.decode('utf-8', errors='ignore') 
             parts = decoded_str.split(':')
-            return len(parts) >= 6 
+            return len(parts) >= 6 # سرور، پورت، پروتکل، متد، obfs، پسورد
         except Exception:
             return False
             
@@ -106,7 +109,7 @@ class ConfigValidator:
             if not config.startswith('hysteria://'):
                 return False
             parsed = urlparse(config)
-            return bool(parsed.netloc and parsed.port)
+            return bool(parsed.netloc and parsed.port) # باید سرور و پورت داشته باشد
         except Exception:
             return False
 
@@ -116,7 +119,7 @@ class ConfigValidator:
         try:
             if config.startswith('tuic://'):
                 parsed = urlparse(config)
-                return bool(parsed.netloc and ':' in parsed.netloc and parsed.username)
+                return bool(parsed.netloc and ':' in parsed.netloc and parsed.username) # باید هاست، پورت و UUID داشته باشد
             return False
         except:
             return False
@@ -128,7 +131,7 @@ class ConfigValidator:
             if not config.startswith('mieru://'):
                 return False
             parsed = urlparse(config)
-            return bool(parsed.netloc and parsed.username and parsed.port)
+            return bool(parsed.netloc and parsed.username and parsed.port) # نیاز به uuid@server:port دارد
         except:
             return False
 
@@ -139,7 +142,7 @@ class ConfigValidator:
             if not config.startswith('snell://'):
                 return False
             parsed = urlparse(config)
-            return bool(parsed.netloc and parsed.port and 'psk=' in parsed.query)
+            return bool(parsed.netloc and parsed.port and 'psk=' in parsed.query) # نیاز به server:port و psk دارد
         except:
             return False
 
@@ -150,7 +153,7 @@ class ConfigValidator:
             if not config.startswith('anytls://'):
                 return False
             parsed = urlparse(config)
-            return bool(parsed.netloc and parsed.port)
+            return bool(parsed.netloc and parsed.port) # نیاز به server:port دارد
         except Exception:
             return False
 
@@ -161,7 +164,7 @@ class ConfigValidator:
             if not config.startswith('ssh://'):
                 return False
             parsed = urlparse(config)
-            return bool(parsed.netloc and parsed.username and parsed.password and parsed.port)
+            return bool(parsed.netloc and parsed.username and parsed.password and parsed.port) # نیاز به user:pass@server:port دارد
         except Exception:
             return False
 
@@ -172,7 +175,7 @@ class ConfigValidator:
             if not config.startswith('juicity://'):
                 return False
             parsed = urlparse(config)
-            return bool(parsed.netloc and parsed.username and parsed.port and 'password=' in parsed.query)
+            return bool(parsed.netloc and parsed.username and parsed.port and 'password=' in parsed.query) # نیاز به uuid@server:port و password دارد
         except Exception:
             return False
             
@@ -474,12 +477,11 @@ class ConfigValidator:
     @staticmethod
     def get_canonical_parameters(config_string: str, protocol_prefix: str) -> Optional[Dict[str, Any]]:
         """
-        **جدید**: استخراج پارامترهای "کانونی" (اصلی و عملکردی) یک کانفیگ برای شناسایی تکراری‌ها.
+        استخراج پارامترهای "کانونی" (اصلی و عملکردی) یک کانفیگ برای شناسایی تکراری‌ها.
         این تابع بخش‌های غیرعملکردی مانند remark/tag را نادیده می‌گیرد.
         """
         parsed_url = urlparse(config_string)
         
-        # نرمال‌سازی نام پروتکل
         if protocol_prefix == 'hy2://':
             protocol_prefix = 'hysteria2://'
         elif protocol_prefix == 'hy1://':
@@ -508,9 +510,9 @@ class ConfigValidator:
                     'port': parsed_url.port,
                     'uuid': parsed_url.username,
                     'flow': parse_qs(parsed_url.query).get('flow', [''])[0],
-                    'security': parse_qs(parsed_url.query).get('security', [''])[0], # 'tls' or 'reality' etc.
+                    'security': parse_qs(parsed_url.query).get('security', [''])[0],
                     'sni': parse_qs(parsed_url.query).get('sni', [parsed_url.hostname])[0],
-                    'type': parse_qs(parsed_url.query).get('type', ['tcp'])[0], # network type
+                    'type': parse_qs(parsed_url.query).get('type', ['tcp'])[0],
                     'host': parse_qs(parsed_url.query).get('host', [''])[0],
                     'path': parse_qs(parsed_url.query).get('path', [''])[0]
                 })
@@ -532,7 +534,7 @@ class ConfigValidator:
                     'password': parsed_url.username or query_params.get('auth', [''])[0] or query_params.get('password', [''])[0],
                     'sni': query_params.get('sni', [parsed_url.hostname])[0],
                     'alpn': query_params.get('alpn', [''])[0],
-                    'obfs': query_params.get('obfs', [''])[0] # for Hysteria1
+                    'obfs': query_params.get('obfs', [''])[0] 
                 })
             elif protocol_prefix == 'ss://':
                 parts = config_string.replace('ss://', '').split('@')
@@ -574,7 +576,7 @@ class ConfigValidator:
                     'congestion_control': query_params.get('congestion_control', [''])[0],
                     'udp_relay_mode': query_params.get('udp_relay_mode', [''])[0],
                     'disable_sni': query_params.get('disable_sni', [''])[0],
-                    'tls': 'tls' in parsed_url.scheme # True if tuic+tls
+                    'tls': 'tls' in parsed_url.scheme
                 })
             elif protocol_prefix == 'mieru://':
                 query_params = parse_qs(parsed_url.query)
@@ -636,11 +638,12 @@ class ConfigValidator:
                 })
             elif protocol_prefix == 'warp://':
                 canonical_params.update({
-                    'server': parsed_url.hostname if parsed_url.hostname else '162.159.192.1', # Use common IP if no specific gateway
-                    'uuid': parsed_url.username # WARP may or may not have UUID
+                    'server': parsed_url.hostname if parsed_url.hostname else '162.159.192.1', 
+                    'uuid': parsed_url.username 
                 })
+            else: # پروتکل ناشناخته
+                return None
 
-            # حذف مقادیر None یا رشته‌های خالی از canonical_params
             canonical_params = {k: v for k, v in canonical_params.items() if v is not None and v != ''}
             return canonical_params
         except Exception:
@@ -649,15 +652,13 @@ class ConfigValidator:
     @staticmethod
     def get_canonical_id(config_string: str, protocol_prefix: str) -> Optional[str]:
         """
-        **جدید**: تولید یک رشته شناسه کانونی (Canonical ID) برای یک کانفیگ.
+        تولید یک رشته شناسه کانونی (Canonical ID) برای یک کانفیگ.
         این شناسه برای شناسایی دقیق کانفیگ‌های تکراری استفاده می‌شود.
         """
         canonical_params = ConfigValidator.get_canonical_parameters(config_string, protocol_prefix)
         if not canonical_params:
             return None
         
-        # تبدیل دیکشنری پارامترهای کانونی به یک رشته JSON مرتب شده
-        # مرتب‌سازی کلیدها تضمین می‌کند که ترتیب آن‌ها همیشه یکسان باشد و هش یکسانی تولید شود.
         sorted_canonical_params = sorted(canonical_params.items())
         return json.dumps(sorted_canonical_params, sort_keys=True)
 
