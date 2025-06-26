@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 # وابستگی‌های مورد نیاز
 from config import ProxyConfig # برای دسترسی به تنظیمات پروتکل‌ها و مهلت زمانی
 from config_validator import ConfigValidator # برای استخراج آدرس سرور
+import requests # برای تست Mihomo
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +38,7 @@ class ConnectionTester:
         # این لیست را می‌توان با توجه به نیاز و آزمایش‌های واقعی Mihomo به‌روزرسانی کرد.
         self.mihomo_testable_protocols = {
             "vmess://", "vless://", "trojan://", "ss://", "hysteria2://", "hysteria://", "tuic://", "juicity://",
-            # Hysteria v1 معمولاً در Mihomo پشتیبانی می‌شود.
-            # WireGuard و SSR ممکن است نیاز به پیکربندی پیچیده‌تر داشته باشند یا فقط به صورت کلاینت کار کنند،
-            # بنابراین فعلاً برای تست با Mihomo در نظر نمی‌گیریم.
-            # برای SSH، Anytls، Mieru، Snell، Warp هم معمولاً تست مستقیم با ابزار پراکسی پیچیده‌تر است.
+            "hysteria://", # Hysteria v1 معمولاً در Mihomo پشتیبانی می‌شود.
         }
         logger.info("ConnectionTester با موفقیت مقداردهی اولیه شد.")
 
@@ -75,6 +73,12 @@ class ConnectionTester:
         
         # Mihomo نیاز به یک فایل کانفیگ YAML دارد.
         # ما یک فایل موقت ایجاد می‌کنیم.
+        # توجه: Mihomo می تواند URL های کانفیگ را مستقیماً در بخش 'proxies' بپذیرد
+        # اما برای اطمینان بیشتر و کنترل بیشتر، می توان آن را در یک فایل YAML به صورت 'url' یا 'config' قرار داد.
+        # در اینجا از نوع 'external' استفاده می‌کنیم که به آن یک URL می‌دهیم.
+        # اگر Mihomo مستقیماً string config را در proxies/url قبول نکرد، باید آن را parse کرده و به YAML تبدیل کنیم.
+        # اما برای پروتکل‌های استاندارد (Vmess, Vless, etc.) معمولاً مستقیماً کار می‌کند.
+
         mihomo_config_content = {
             "port": 7890,  # پورت داخلی Mihomo
             "log-level": "info",
@@ -82,8 +86,10 @@ class ConnectionTester:
             "proxies": [
                 {
                     "name": "test-proxy",
-                    "type": "external", # نوع خارجی برای کانفیگ‌های مستقیم
-                    "url": config_string # Mihomo می‌تواند URLهای پراکسی را مستقیماً از اینجا بخواند
+                    # Mihomo می‌تواند URL کانفیگ را مستقیماً بپذیرد.
+                    # اگر Mihomo این را نپذیرفت، باید آن را به فرمت YAML/JSON Mihomo تبدیل کنید.
+                    "type": "external",
+                    "url": config_string # URL کانفیگ پروکسی شما
                 }
             ],
             "proxy-groups": [
@@ -99,21 +105,23 @@ class ConnectionTester:
         }
 
         temp_config_file_path = None
+        process = None # مقداردهی اولیه برای استفاده در بلوک finally
         try:
             # ایجاد یک فایل موقت برای کانفیگ Mihomo
             with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.yaml', encoding='utf-8') as temp_config_file:
-                json.dump(mihomo_config_content, temp_config_file, indent=2) # از json.dump برای تولید YAML ساده استفاده می‌کنیم
+                # استفاده از json.dump برای تولید YAML ساده. Mihomo معمولاً JSON را هم می‌پذیرد
+                json.dump(mihomo_config_content, temp_config_file, indent=2) 
                 temp_config_file_path = temp_config_file.name
             
             # دستور اجرای Mihomo (فرض می‌کنیم mihomo در PATH موجود است)
             # -f: مشخص کردن فایل کانفیگ
             # -d: مشخص کردن دایرکتوری داده (برای لاگ‌ها و cache)
-            # --no-autoclose: برای جلوگیری از بسته شدن فوری Mihomo در تست
+            # --no-autoclose: برای جلوگیری از بسته شدن فوری Mihomo در تست (در برخی نسخه‌ها)
             mihomo_command = [
                 "mihomo", 
                 "-f", temp_config_file_path, 
                 "-d", tempfile.gettempdir(), # از یک دایرکتوری موقت برای داده‌ها استفاده کن
-                "--no-autoclose"
+                # "--no-autoclose" # این گزینه ممکن است در همه نسخه‌ها نباشد، حذف شود اگر مشکل ایجاد کرد
             ]
 
             # اجرای Mihomo به عنوان یک فرآیند جداگانه
@@ -127,7 +135,7 @@ class ConnectionTester:
             # تلاش برای اتصال از طریق Mihomo
             # Mihomo پورت 7890 را برای SOCKS5 و HTTP/HTTPS باز می‌کند
             test_proxy_url = "http://127.0.0.1:7890" # پورت Mihomo
-
+            
             # یک درخواست کوچک به یک سرور معروف ارسال کنید (مثلا Cloudflare's captive portal check)
             # این URL برای تست اتصال اینترنت بدون redirection است.
             test_target_url = "http://cp.cloudflare.com/"
@@ -145,15 +153,6 @@ class ConnectionTester:
             except requests.exceptions.RequestException as e:
                 logger.debug(f"خطا در درخواست از طریق Mihomo برای کانفیگ '{config_string[:min(len(config_string), 50)]}...': {e}")
                 return False
-            finally:
-                # اطمینان از terminate کردن Mihomo
-                if process.poll() is None: # اگر فرآیند هنوز در حال اجراست
-                    try:
-                        os.killpg(os.getpgid(process.pid), 9) # Kill the process group
-                        process.wait(timeout=1)
-                    except OSError as e:
-                        logger.debug(f"خطا در kill کردن فرآیند Mihomo: {e}")
-
         except FileNotFoundError:
             logger.error("اجرایی Mihomo یافت نشد. لطفاً مطمئن شوید که Mihomo در PATH سیستم شما نصب و قابل دسترس است.")
             return False
@@ -161,6 +160,13 @@ class ConnectionTester:
             logger.error(f"خطا در اجرای تست Mihomo برای کانفیگ '{config_string[:min(len(config_string), 50)]}...': {e}", exc_info=True)
             return False
         finally:
+            # اطمینان از terminate کردن Mihomo
+            if process and process.poll() is None: # اگر فرآیند هنوز در حال اجراست
+                try:
+                    os.killpg(os.getpgid(process.pid), 9) # Kill the process group
+                    process.wait(timeout=1) # صبر کن تا فرآیند بسته شود
+                except OSError as e:
+                    logger.debug(f"خطا در kill کردن فرآیند Mihomo: {e}")
             # پاکسازی فایل کانفیگ موقت
             if temp_config_file_path and os.path.exists(temp_config_file_path):
                 os.remove(temp_config_file_path)
