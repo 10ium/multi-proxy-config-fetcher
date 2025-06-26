@@ -10,14 +10,16 @@ from typing import List, Dict, Optional, Set, Tuple, Any
 from bs4 import BeautifulSoup
 import base64 
 
-import concurrent.futures
-import threading
+import concurrent.futures # برای واکشی همزمان
+import threading # برای محافظت از منابع مشترک در حالت همزمان
 
 from config import ProxyConfig, ChannelConfig
 from config_validator import ConfigValidator
 from user_settings import SOURCE_URLS 
 
-# پیکربندی لاگ‌گیری (از config.py ارث می‌برد یا اینجا تنظیم می‌کند)
+# پیکربندی لاگ‌گیری (بهتر است از پیکربندی مرکزی در config.py استفاده شود یا آن را اینجا گسترش داد)
+# برای نمایش لاگ‌های DEBUG، سطح logging.basicConfig را به logging.DEBUG تغییر دهید.
+# در حالت پیش‌فرض (INFO)، این لاگ‌ها نمایش داده نمی‌شوند و خروجی تمیزتر است.
 logging.basicConfig(
     level=logging.INFO, # سطح پیش‌فرض لاگ‌گیری: INFO. پیام‌های DEBUG نمایش داده نمی‌شوند.
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -50,7 +52,7 @@ class ConfigFetcher:
         # کش برای ذخیره موقعیت جغرافیایی IPها برای افزایش سرعت و جلوگیری از محدودیت‌ها
         self.ip_location_cache: Dict[str, Tuple[str, str]] = {} 
 
-        # **جدید**: قفل برای محافظت از منابع مشترک در عملیات همزمان
+        # **جدید**: قفل برای محافظت از منابع مشترک در عملیات همزمان (مثل seen_configs و ip_location_cache)
         self._lock = threading.Lock() 
 
         # بازه‌های زمانی برای Smart Retry (تلاش مجدد هوشمند)
@@ -91,7 +93,8 @@ class ConfigFetcher:
             except Exception as e:
                 logger.warning(f"خطا در بارگذاری URLها از stats.json قبلی: {str(e)}")
 
-    # --- متدهای دریافت موقعیت جغرافیایی IP (منتقل شده از ConfigToSingbox) ---
+    # --- متدهای دریافت موقعیت جغرافیایی IP ---
+    # این متدها برای جلوگیری از شلوغی لاگ‌ها، پیام‌های WARNING مربوط به حل نشدن نام میزبان را به DEBUG منتقل می‌کنند.
     def _get_location_from_ip_api(self, ip: str) -> Tuple[str, str]:
         """دریافت موقعیت جغرافیایی از ip-api.com"""
         try:
@@ -157,16 +160,14 @@ class ConfigFetcher:
         موقعیت جغرافیایی (پرچم و نام کشور) را از یک آدرس (دامنه/IP) دریافت می‌کند.
         از کش برای افزایش سرعت استفاده می‌کند.
         """
-        # WARP ممکن است آدرس Gateway مشخص نداشته باشد، اما هنوز یک مکان (Cloudflare) دارد
         if address == "162.159.192.1": # Cloudflare Anycast IP
              logger.debug(f"آدرس '{address}' به عنوان Cloudflare Anycast شناسایی شد. استفاده از موقعیت پیش‌فرض.")
-             return "🇺🇸", "Cloudflare" # پرچم آمریکا برای Cloudflare
+             return "🇺🇸", "Cloudflare"
 
         try:
             ip = socket.gethostbyname(address)
             
-            # بررسی کش
-            with self._lock: # استفاده از قفل برای دسترسی ایمن به کش
+            with self._lock: # محافظت از کش در برابر دسترسی همزمان
                 if ip in self.ip_location_cache:
                     logger.debug(f"موقعیت IP '{ip}' از کش بازیابی شد.")
                     return self.ip_location_cache[ip]
@@ -183,22 +184,20 @@ class ConfigFetcher:
                 country_code, country = api_func(ip)
                 if country_code and country and len(country_code) == 2:
                     flag = ''.join(chr(ord('🇦') + ord(c.upper()) - ord('A')) for c in country_code)
-                    with self._lock: # استفاده از قفل برای دسترسی ایمن به کش
-                        self.ip_location_cache[ip] = (flag, country) # ذخیره در کش
+                    with self._lock: # محافظت از کش در برابر دسترسی همزمان
+                        self.ip_location_cache[ip] = (flag, country)
                     logger.debug(f"موقعیت IP '{ip}' از API {api_func.__name__} دریافت شد: {flag} {country}")
                     return flag, country
                 
         except socket.gaierror:
-            # سطح لاگ از WARNING به DEBUG تغییر یافت تا خروجی شلوغ نشود.
+            # **تغییر یافته**: سطح لاگ از WARNING به DEBUG تغییر یافت تا خروجی شلوغ نشود.
             logger.debug(f"نام میزبان قابل حل نیست: '{address}'. موقعیت 'نامشخص' خواهد بود.") 
         except Exception as e:
             logger.error(f"خطای کلی در دریافت موقعیت برای '{address}': {str(e)}")
             
-        # ذخیره در کش حتی اگر ناموفق بود تا از تلاش‌های بعدی برای همین آدرس جلوگیری شود.
-        with self._lock: # استفاده از قفل برای دسترسی ایمن به کش
+        with self._lock: # محافظت از کش در برابر دسترسی همزمان
             self.ip_location_cache[address] = ("🏳️", "Unknown") 
         return "🏳️", "Unknown"
-    # --- پایان متدهای دریافت موقعیت جغرافیایی IP ---
 
 
     def extract_config(self, text: str, start_index: int, protocol: str) -> Optional[str]:
@@ -537,7 +536,7 @@ class ConfigFetcher:
                             if server_address:
                                 flag, country = self.get_location(server_address)
                                 logger.debug(f"موقعیت برای '{server_address}' یافت شد: {flag} {country}")
-                            # **تغییر یافته**: حذف لاگ warning برای عدم یافتن پرچم (به debug منتقل شد)
+                            # لاگ warning برای عدم یافتن پرچم (حذف شد، حالا در get_location به debug منتقل شد)
                             # else:
                             #     logger.debug(f"آدرس سرور برای پروتکل '{actual_protocol}' از کانفیگ استخراج نشد: '{clean_config[:min(len(clean_config), 50)]}...'.")
                         
@@ -711,7 +710,9 @@ class ConfigFetcher:
             final_unique_configs_list = []
             seen_canonical_ids_for_final_list = set()
             for cfg_dict in all_configs:
+                # اطمینان حاصل کنید که canonical_id واقعاً در دیکشنری موجود است
                 canonical_id = cfg_dict.get('canonical_id') 
+                # این بررسی برای اطمینان بیشتر است، زیرا process_config باید آن را اضافه کرده باشد
                 if canonical_id and canonical_id not in seen_canonical_ids_for_final_list:
                     seen_canonical_ids_for_final_list.add(canonical_id)
                     final_unique_configs_list.append(cfg_dict)
