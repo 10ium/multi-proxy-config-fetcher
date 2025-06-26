@@ -1,18 +1,19 @@
 import re
 import base64
 import json
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Dict, Any
 from urllib.parse import unquote, urlparse, parse_qs
 
 class ConfigValidator:
     """
     کلاس ConfigValidator برای اعتبارسنجی، پاکسازی و استخراج اطلاعات از رشته‌های کانفیگ پراکسی.
+    **بهبود یافته برای حذف دقیق تکراری‌ها (با استفاده از شناسه‌های کانونی).**
     """
     @staticmethod
     def is_base64(s: str) -> bool:
         """بررسی می‌کند که آیا یک رشته Base64 معتبر است یا خیر."""
         try:
-            s = s.rstrip('=') # حذف پدینگ برای بررسی راحت‌تر
+            s = s.rstrip('=')
             return bool(re.match(r'^[A-Za-z0-9+/\-_]*$', s))
         except:
             return False
@@ -21,9 +22,9 @@ class ConfigValidator:
     def decode_base64_url(s: str) -> Optional[bytes]:
         """رمزگشایی یک رشته Base64 URL-safe."""
         try:
-            s = s.replace('-', '+').replace('_', '/') # تبدیل فرمت URL-safe به فرمت استاندارد Base64
+            s = s.replace('-', '+').replace('_', '/')
             padding = 4 - (len(s) % 4)
-            if padding != 4: # اضافه کردن پدینگ '=' در صورت نیاز
+            if padding != 4:
                 s += '=' * padding
             return base64.b64decode(s)
         except:
@@ -46,7 +47,6 @@ class ConfigValidator:
         """پاکسازی کانفیگ VMess با حذف بخش‌های اضافی بعد از رشته Base64 اصلی."""
         if "vmess://" in config:
             base64_part = config[8:]
-            # فقط کاراکترهای مجاز Base64 (شامل - و _ برای URL-safe) را نگه دارید
             base64_clean = re.split(r'[^A-Za-z0-9+/=_-]', base64_part)[0]
             return f"vmess://{base64_clean}"
         return config
@@ -62,12 +62,11 @@ class ConfigValidator:
     def clean_ssr_config(config: str) -> str:
         """پاکسازی کانفیگ SSR، اطمینان از شروع با ssr:// و Base64 معتبر."""
         if config.startswith("ssr://"):
-            parts = config[6:].split("/?") # جدا کردن قبل از پارامترها
+            parts = config[6:].split("/?")
             base64_part = parts[0]
-            # اطمینان از معتبر بودن بخش Base64
             if ConfigValidator.is_base64(base64_part):
                 return config
-        return config # اگر فرمت SSR معتبر نبود، اصلی را برگردانید
+        return config
 
     @staticmethod
     def is_vmess_config(config: str) -> bool:
@@ -78,7 +77,7 @@ class ConfigValidator:
             base64_part = config[8:]
             decoded = ConfigValidator.decode_base64_url(base64_part)
             if decoded:
-                json.loads(decoded) # تلاش برای بارگذاری به عنوان JSON
+                json.loads(decoded)
                 return True
             return False
         except:
@@ -90,27 +89,24 @@ class ConfigValidator:
         try:
             if not config.startswith('ssr://'):
                 return False
-            base64_part = config[6:].split('/?')[0] # گرفتن بخش قبل از پارامترهای اختیاری
+            base64_part = config[6:].split('/?')[0]
             decoded_bytes = ConfigValidator.decode_base64_url(base64_part)
             if not decoded_bytes:
                 return False
-            decoded_str = decoded_bytes.decode('utf-8', errors='ignore') 
+            decoded_str = decoded_bytes.decode('utf-8', errors='ignore')
             parts = decoded_str.split(':')
-            return len(parts) >= 6 # سرور، پورت، پروتکل، متد، obfs، پسورد
+            return len(parts) >= 6 
         except Exception:
             return False
             
     @staticmethod
     def is_hysteria_config(config: str) -> bool:
-        """
-        **جدید**: بررسی اعتبار یک کانفیگ Hysteria 1.
-        hysteria://<server>:<port>?<params>#<tag>
-        """
+        """بررسی اعتبار یک کانفیگ Hysteria 1."""
         try:
             if not config.startswith('hysteria://'):
                 return False
             parsed = urlparse(config)
-            return bool(parsed.netloc and parsed.port) # باید سرور و پورت داشته باشد
+            return bool(parsed.netloc and parsed.port)
         except Exception:
             return False
 
@@ -120,7 +116,7 @@ class ConfigValidator:
         try:
             if config.startswith('tuic://'):
                 parsed = urlparse(config)
-                return bool(parsed.netloc and ':' in parsed.netloc and parsed.username) # باید هاست، پورت و UUID داشته باشد
+                return bool(parsed.netloc and ':' in parsed.netloc and parsed.username)
             return False
         except:
             return False
@@ -132,7 +128,7 @@ class ConfigValidator:
             if not config.startswith('mieru://'):
                 return False
             parsed = urlparse(config)
-            return bool(parsed.netloc and parsed.username and parsed.port) # نیاز به uuid@server:port دارد
+            return bool(parsed.netloc and parsed.username and parsed.port)
         except:
             return False
 
@@ -143,7 +139,7 @@ class ConfigValidator:
             if not config.startswith('snell://'):
                 return False
             parsed = urlparse(config)
-            return bool(parsed.netloc and parsed.port and 'psk=' in parsed.query) # نیاز به server:port و psk دارد
+            return bool(parsed.netloc and parsed.port and 'psk=' in parsed.query)
         except:
             return False
 
@@ -154,7 +150,7 @@ class ConfigValidator:
             if not config.startswith('anytls://'):
                 return False
             parsed = urlparse(config)
-            return bool(parsed.netloc and parsed.port) # نیاز به server:port دارد
+            return bool(parsed.netloc and parsed.port)
         except Exception:
             return False
 
@@ -165,7 +161,7 @@ class ConfigValidator:
             if not config.startswith('ssh://'):
                 return False
             parsed = urlparse(config)
-            return bool(parsed.netloc and parsed.username and parsed.password and parsed.port) # نیاز به user:pass@server:port دارد
+            return bool(parsed.netloc and parsed.username and parsed.password and parsed.port)
         except Exception:
             return False
 
@@ -176,22 +172,17 @@ class ConfigValidator:
             if not config.startswith('juicity://'):
                 return False
             parsed = urlparse(config)
-            return bool(parsed.netloc and parsed.username and parsed.port and 'password=' in parsed.query) # نیاز به uuid@server:port و password دارد
+            return bool(parsed.netloc and parsed.username and parsed.port and 'password=' in parsed.query)
         except Exception:
             return False
             
     @staticmethod
     def is_warp_config(config: str) -> bool:
-        """
-        **جدید**: بررسی اعتبار یک کانفیگ WARP.
-        warp:// (ممکن است یک URL ساده باشد یا شامل پارامترها باشد)
-        """
+        """بررسی اعتبار یک کانفیگ WARP."""
         try:
             if not config.startswith('warp://'):
                 return False
-            # WARP configs can be very simple or contain complex parameters.
-            # A basic check for having a hostname is often enough, but some might just be 'warp://'
-            return True # WARP اغلب نشان‌دهنده استفاده از کلاینت/سرویس WARP داخلی است.
+            return True 
         except Exception:
             return False
 
@@ -205,11 +196,11 @@ class ConfigValidator:
     @staticmethod
     def is_base64_config(config: str) -> Tuple[bool, str]:
         """بررسی می‌کند که آیا یک کانفیگ با Base64 کدگذاری شده است و نوع پروتکل آن را برمی‌گرداند."""
-        protocols = ['vmess://', 'vless://', 'ss://', 'tuic://', 'ssr://'] # Add ssr
+        protocols = ['vmess://', 'vless://', 'ss://', 'tuic://', 'ssr://']
         for protocol in protocols:
             if config.startswith(protocol):
                 base64_part = config[len(protocol):]
-                decoded_url = unquote(base64_part) # دیکد کردن URL-encoding (مثلا %20)
+                decoded_url = unquote(base64_part)
                 if (ConfigValidator.is_base64(decoded_url) or 
                     ConfigValidator.is_base64(base64_part)):
                     return True, protocol[:-3]
@@ -223,7 +214,7 @@ class ConfigValidator:
             if decoded_text:
                 protocols = ['vmess://', 'vless://', 'ss://', 'trojan://', 'hysteria2://', 'hy2://', 'wireguard://', 'tuic://', 'ssconf://',
                              'ssr://', 'mieru://', 'snell://', 'anytls://', 'ssh://', 'juicity://',
-                             'hysteria://', 'warp://'] # تمامی پروتکل ها
+                             'hysteria://', 'warp://']
                 for protocol in protocols:
                     if protocol in decoded_text:
                         return decoded_text
@@ -249,7 +240,7 @@ class ConfigValidator:
                     
             protocols = ['vmess://', 'vless://', 'ss://', 'trojan://', 'hysteria2://', 'hy2://', 'wireguard://', 'tuic://', 'ssconf://',
                          'ssr://', 'mieru://', 'snell://', 'anytls://', 'ssh://', 'juicity://',
-                         'hysteria://', 'warp://'] # تمامی پروتکل ها
+                         'hysteria://', 'warp://']
             current_pos = 0
             text_length = len(line)
             
@@ -297,10 +288,10 @@ class ConfigValidator:
     @staticmethod
     def clean_config(config: str) -> str:
         """پاکسازی یک رشته کانفیگ از کاراکترهای نامرئی، ایموجی‌ها و فضاهای اضافی."""
-        config = re.sub(r'[\U0001F300-\U0001F9FF]', '', config) # حذف ایموجی‌ها
-        config = re.sub(r'[\x00-\x08\x0B-\x1F\x7F-\x9F]', '', config) # حذف کاراکترهای کنترل
-        config = re.sub(r'[^\S\r\n]+', ' ', config) # جایگزینی فضاهای اضافی با یک فاصله
-        config = config.strip() # حذف فضاهای خالی از ابتدا و انتها
+        config = re.sub(r'[\U0001F300-\U0001F9FF]', '', config)
+        config = re.sub(r'[\x00-\x08\x0B-\x1F\x7F-\x9F]', '', config)
+        config = re.sub(r'[^\S\r\n]+', ' ', config)
+        config = config.strip()
         return config
 
     @staticmethod
@@ -311,7 +302,7 @@ class ConfigValidator:
             
         protocols = ['vmess://', 'vless://', 'ss://', 'trojan://', 'hysteria2://', 'hy2://', 'wireguard://', 'tuic://', 'ssconf://',
                      'ssr://', 'mieru://', 'snell://', 'anytls://', 'ssh://', 'juicity://',
-                     'hysteria://', 'warp://'] # تمامی پروتکل ها
+                     'hysteria://', 'warp://']
         return any(config.startswith(p) for p in protocols)
 
     @classmethod
@@ -338,7 +329,6 @@ class ConfigValidator:
                 return cls.is_hysteria_config(config)
             elif protocol == 'warp://':
                 return cls.is_warp_config(config)
-            # برای پروتکل‌های URL-based که Base64 نیستند و ساختار parse_url برایشان کافی است
             elif protocol in ['vless://', 'trojan://', 'hysteria2://', 'wireguard://']:
                 parsed = urlparse(config)
                 return bool(parsed.netloc and parsed.port)
@@ -379,7 +369,6 @@ class ConfigValidator:
                     for match in matches:
                         found_channels.add(f"https://t.me/s/{match}")
 
-        # 3. برای VMess/SSR/Hysteria: دیکد کردن JSON/Base64 و جستجو در فیلدهای مربوطه
         if config_string.startswith('vmess://'):
             try:
                 base64_part = config_string[len('vmess://'):]
@@ -423,7 +412,6 @@ class ConfigValidator:
                     matches = re.findall(telegram_url_pattern, unquote(parsed_hy.fragment))
                     for match in matches:
                         found_channels.add(f"https://t.me/s/{match}")
-                # همچنین رمز عبور را بررسی کنید اگر متنی باشد (برخی Hysteria configs از رمز عبور متنی در URL استفاده می‌کنند)
                 query_params = parse_qs(parsed_hy.query)
                 if 'password' in query_params:
                     matches = re.findall(telegram_url_pattern, query_params['password'][0])
@@ -442,10 +430,9 @@ class ConfigValidator:
     @staticmethod
     def get_server_address(config_string: str, protocol_prefix: str) -> Optional[str]:
         """
-        **تغییر یافته**: استخراج آدرس سرور (هاست‌نام یا IP) از یک رشته کانفیگ با توجه به پروتکل آن.
+        استخراج آدرس سرور (هاست‌نام یا IP) از یک رشته کانفیگ با توجه به پروتکل آن.
         """
         try:
-            # نرمال‌سازی نام‌های مستعار به پروتکل اصلی برای تطابق صحیح
             if protocol_prefix == 'hy2://':
                 protocol_prefix = 'hysteria2://'
             elif protocol_prefix == 'hy1://':
@@ -457,7 +444,6 @@ class ConfigValidator:
                 decoded_data = base64.b64decode(config_string[len(protocol_prefix):]).decode('utf-8')
                 vmess_json = json.loads(decoded_data)
                 return vmess_json.get('add')
-            # برای بسیاری از پروتکل‌های URL-based، هاست‌نام در parsed_url.hostname قرار دارد
             elif protocol_prefix in ['vless://', 'trojan://', 'hysteria2://', 'tuic://', 'mieru://', 'snell://', 'anytls://', 'juicity://', 'hysteria://', 'ssh://']:
                 return parsed_url.hostname
             elif protocol_prefix == 'ss://':
@@ -477,12 +463,201 @@ class ConfigValidator:
                     endpoint = endpoint_match.group(1)
                     return endpoint.split(':')[0]
             elif protocol_prefix == 'warp://':
-                if parsed_url.hostname: # اگر URL شامل هاست‌نام (مثلاً برای گیت‌وی اختصاصی) بود
+                if parsed_url.hostname:
                     return parsed_url.hostname
-                # Fallback به یک IP عمومی Cloudflare برای WARP اگر هاست مشخصی ارائه نشده است
                 return "162.159.192.1" 
             
-            return None # در صورتی که پروتکل شناسایی نشد یا آدرس سرور قابل استخراج نبود
+            return None
         except Exception:
             return None
+            
+    @staticmethod
+    def get_canonical_parameters(config_string: str, protocol_prefix: str) -> Optional[Dict[str, Any]]:
+        """
+        **جدید**: استخراج پارامترهای "کانونی" (اصلی و عملکردی) یک کانفیگ برای شناسایی تکراری‌ها.
+        این تابع بخش‌های غیرعملکردی مانند remark/tag را نادیده می‌گیرد.
+        """
+        parsed_url = urlparse(config_string)
+        
+        # نرمال‌سازی نام پروتکل
+        if protocol_prefix == 'hy2://':
+            protocol_prefix = 'hysteria2://'
+        elif protocol_prefix == 'hy1://':
+            protocol_prefix = 'hysteria://'
+
+        canonical_params: Dict[str, Any] = {"protocol": protocol_prefix}
+
+        try:
+            if protocol_prefix == 'vmess://':
+                decoded_data = base64.b64decode(config_string[len(protocol_prefix):]).decode('utf-8')
+                vmess_json = json.loads(decoded_data)
+                canonical_params.update({
+                    'server': vmess_json.get('add'),
+                    'port': vmess_json.get('port'),
+                    'uuid': vmess_json.get('id'),
+                    'security': vmess_json.get('scy', 'auto'),
+                    'net': vmess_json.get('net', 'tcp'),
+                    'type': vmess_json.get('type', 'none'),
+                    'host': vmess_json.get('host', ''),
+                    'path': vmess_json.get('path', ''),
+                    'tls': vmess_json.get('tls', '')
+                })
+            elif protocol_prefix == 'vless://':
+                canonical_params.update({
+                    'server': parsed_url.hostname,
+                    'port': parsed_url.port,
+                    'uuid': parsed_url.username,
+                    'flow': parse_qs(parsed_url.query).get('flow', [''])[0],
+                    'security': parse_qs(parsed_url.query).get('security', [''])[0], # 'tls' or 'reality' etc.
+                    'sni': parse_qs(parsed_url.query).get('sni', [parsed_url.hostname])[0],
+                    'type': parse_qs(parsed_url.query).get('type', ['tcp'])[0], # network type
+                    'host': parse_qs(parsed_url.query).get('host', [''])[0],
+                    'path': parse_qs(parsed_url.query).get('path', [''])[0]
+                })
+            elif protocol_prefix == 'trojan://':
+                canonical_params.update({
+                    'server': parsed_url.hostname,
+                    'port': parsed_url.port,
+                    'password': parsed_url.username,
+                    'sni': parse_qs(parsed_url.query).get('sni', [parsed_url.hostname])[0],
+                    'alpn': parse_qs(parsed_url.query).get('alpn', [''])[0],
+                    'type': parse_qs(parsed_url.query).get('type', ['tcp'])[0],
+                    'path': parse_qs(parsed_url.query).get('path', [''])[0]
+                })
+            elif protocol_prefix in ['hysteria2://', 'hysteria://']:
+                query_params = parse_qs(parsed_url.query)
+                canonical_params.update({
+                    'server': parsed_url.hostname,
+                    'port': parsed_url.port,
+                    'password': parsed_url.username or query_params.get('auth', [''])[0] or query_params.get('password', [''])[0],
+                    'sni': query_params.get('sni', [parsed_url.hostname])[0],
+                    'alpn': query_params.get('alpn', [''])[0],
+                    'obfs': query_params.get('obfs', [''])[0] # for Hysteria1
+                })
+            elif protocol_prefix == 'ss://':
+                parts = config_string.replace('ss://', '').split('@')
+                if len(parts) == 2:
+                    method_pass_encoded = parts[0]
+                    decoded_method_pass = base64.b64decode(method_pass_encoded.replace('-', '+').replace('_', '/')).decode('utf-8')
+                    method, password = decoded_method_pass.split(':')
+                    server_port_part = parts[1].split('#')[0]
+                    server, port = server_port_part.split(':')
+                    canonical_params.update({
+                        'server': server,
+                        'port': int(port),
+                        'method': method,
+                        'password': password
+                    })
+            elif protocol_prefix == 'ssr://':
+                base64_part = config_string[len(protocol_prefix):].split('/?')[0]
+                decoded_params_str = ConfigValidator.decode_base64_url(base64_part).decode('utf-8', errors='ignore')
+                ssr_parts = decoded_params_str.split(':')
+                if len(ssr_parts) >= 6:
+                    password_encoded = ssr_parts[5]
+                    password = base64.b64decode(password_encoded.replace('-', '+').replace('_', '/')).decode('utf-8', errors='ignore')
+                    canonical_params.update({
+                        'server': ssr_parts[0],
+                        'port': int(ssr_parts[1]),
+                        'protocol_type': ssr_parts[2],
+                        'method': ssr_parts[3],
+                        'obfs': ssr_parts[4],
+                        'password': password
+                    })
+            elif protocol_prefix == 'tuic://':
+                query_params = parse_qs(parsed_url.query)
+                canonical_params.update({
+                    'server': parsed_url.hostname,
+                    'port': parsed_url.port,
+                    'uuid': parsed_url.username,
+                    'password': query_params.get('password', [''])[0],
+                    'alpn': query_params.get('alpn', [''])[0],
+                    'congestion_control': query_params.get('congestion_control', [''])[0],
+                    'udp_relay_mode': query_params.get('udp_relay_mode', [''])[0],
+                    'disable_sni': query_params.get('disable_sni', [''])[0],
+                    'tls': 'tls' in parsed_url.scheme # True if tuic+tls
+                })
+            elif protocol_prefix == 'mieru://':
+                query_params = parse_qs(parsed_url.query)
+                canonical_params.update({
+                    'uuid': parsed_url.username,
+                    'server': parsed_url.hostname,
+                    'port': parsed_url.port,
+                    'tls': query_params.get('tls', [''])[0],
+                    'udp_over_tcp': query_params.get('udp_over_tcp', [''])[0],
+                    'peer_fingerprint': query_params.get('peer_fingerprint', [''])[0],
+                    'server_name': query_params.get('server_name', [''])[0],
+                })
+            elif protocol_prefix == 'snell://':
+                query_params = parse_qs(parsed_url.query)
+                canonical_params.update({
+                    'server': parsed_url.hostname,
+                    'port': parsed_url.port,
+                    'psk': query_params.get('psk', [''])[0],
+                    'version': query_params.get('version', [''])[0],
+                    'obfs': query_params.get('obfs', [''])[0],
+                    'obfs_uri': query_params.get('uri', [''])[0],
+                    'tfo': query_params.get('tfo', [''])[0]
+                })
+            elif protocol_prefix == 'anytls://':
+                query_params = parse_qs(parsed_url.query)
+                canonical_params.update({
+                    'protocol_type': parsed_url.username,
+                    'server': parsed_url.hostname,
+                    'port': parsed_url.port,
+                    'sni': query_params.get('sni', [''])[0],
+                    'path': query_params.get('path', [''])[0],
+                    'host': query_params.get('host', [''])[0],
+                    'tls': query_params.get('tls', [''])[0]
+                })
+            elif protocol_prefix == 'ssh://':
+                canonical_params.update({
+                    'user': parsed_url.username,
+                    'password': parsed_url.password,
+                    'server': parsed_url.hostname,
+                    'port': parsed_url.port
+                })
+            elif protocol_prefix == 'juicity://':
+                query_params = parse_qs(parsed_url.query)
+                canonical_params.update({
+                    'uuid': parsed_url.username,
+                    'server': parsed_url.hostname,
+                    'port': parsed_url.port,
+                    'password': query_params.get('password', [''])[0],
+                    'security': query_params.get('security', [''])[0],
+                    'fingerprint': query_params.get('fingerprint', [''])[0],
+                    'congestion_control': query_params.get('congestion_control', [''])[0],
+                    'alpn': query_params.get('alpn', [''])[0]
+                })
+            elif protocol_prefix == 'wireguard://':
+                endpoint_match = re.search(r'@([^/?#]+)', config_string)
+                canonical_params.update({
+                    'public_key': parsed_url.username,
+                    'endpoint': endpoint_match.group(1) if endpoint_match else None
+                })
+            elif protocol_prefix == 'warp://':
+                canonical_params.update({
+                    'server': parsed_url.hostname if parsed_url.hostname else '162.159.192.1', # Use common IP if no specific gateway
+                    'uuid': parsed_url.username # WARP may or may not have UUID
+                })
+
+            # حذف مقادیر None یا رشته‌های خالی از canonical_params
+            canonical_params = {k: v for k, v in canonical_params.items() if v is not None and v != ''}
+            return canonical_params
+        except Exception:
+            return None
+
+    @staticmethod
+    def get_canonical_id(config_string: str, protocol_prefix: str) -> Optional[str]:
+        """
+        **جدید**: تولید یک رشته شناسه کانونی (Canonical ID) برای یک کانفیگ.
+        این شناسه برای شناسایی دقیق کانفیگ‌های تکراری استفاده می‌شود.
+        """
+        canonical_params = ConfigValidator.get_canonical_parameters(config_string, protocol_prefix)
+        if not canonical_params:
+            return None
+        
+        # تبدیل دیکشنری پارامترهای کانونی به یک رشته JSON مرتب شده
+        # مرتب‌سازی کلیدها تضمین می‌کند که ترتیب آن‌ها همیشه یکسان باشد و هش یکسانی تولید شود.
+        sorted_canonical_params = sorted(canonical_params.items())
+        return json.dumps(sorted_canonical_params, sort_keys=True)
 
