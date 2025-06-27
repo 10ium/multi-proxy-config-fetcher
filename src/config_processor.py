@@ -1,11 +1,9 @@
 import logging
 from typing import Dict, Optional, Any
-# از Callable و Tuple برای get_location_func دیگر نیازی نیست، چون حذف شده است
-# from typing import Callable, Tuple 
 
-# وابستگی‌های مورد نیاز برای ConfigProcessor
-from config import ProxyConfig # برای دسترسی به تنظیمات (مانند پروتکل‌های پشتیبانی شده)
-from config_validator import ConfigValidator # برای توابع اعتبارسنجی و تجزیه
+# وارد کردن کلاس‌ها با مسیر پکیج 'src'
+from src.config import ProxyConfig 
+from src.config_validator import ConfigValidator 
 
 logger = logging.getLogger(__name__)
 
@@ -42,16 +40,14 @@ class ConfigProcessor:
 
         config_string_for_processing = raw_config_string 
         
-        # نرمال‌سازی پروتکل‌های مستعار قبل از پردازش
         if config_string_for_processing.startswith('hy2://'):
             config_string_for_processing = self.validator.normalize_hysteria2_protocol(config_string_for_processing)
         elif config_string_for_processing.startswith('hy1://'):
             config_string_for_processing = config_string_for_processing.replace('hy1://', 'hysteria://', 1) 
 
-        actual_protocol = None # پروتکل شناسایی شده برای کانفیگ
+        actual_protocol = None 
         found_protocol_match = False
 
-        # شناسایی پروتکل اصلی از روی رشته کانفیگ (شامل بررسی نام‌های مستعار)
         for proto_prefix, proto_info in self.config.SUPPORTED_PROTOCOLS.items():
             if config_string_for_processing.startswith(proto_prefix):
                 actual_protocol = proto_prefix
@@ -60,7 +56,6 @@ class ConfigProcessor:
             for alias in proto_info.get('aliases', []):
                 if config_string_for_processing.startswith(alias):
                     actual_protocol = proto_prefix 
-                    # نرمال‌سازی رشته کانفیگ به پروتکل اصلی
                     config_string_for_processing = config_string_for_processing.replace(alias, proto_prefix, 1) 
                     found_protocol_match = True
                     break
@@ -71,30 +66,24 @@ class ConfigProcessor:
             logger.debug(f"پروتکل برای کانفیگ خام شناسایی نشد: '{raw_config_string[:min(len(raw_config_string), 50)]}...'. نادیده گرفته شد.")
             return None
 
-        # بررسی فعال بودن پروتکل در تنظیمات کلی
         if not self.config.is_protocol_enabled(actual_protocol):
             logger.debug(f"پروتکل '{actual_protocol}' فعال نیست. کانفیگ نادیده گرفته شد: '{config_string_for_processing[:min(len(config_string_for_processing), 50)]}...'.")
             return None 
 
-        # پاکسازی‌های پروتکل خاص
         if actual_protocol == "vmess://":
             config_string_for_processing = self.validator.clean_vmess_config(config_string_for_processing)
         elif actual_protocol == "ssr://":
             config_string_for_processing = self.validator.clean_ssr_config(config_string_for_processing)
 
-        # پاکسازی عمومی کاراکترهای اضافی
         clean_config = self.validator.clean_config(config_string_for_processing)
 
-        # اعتبارسنجی دقیق پروتکل
         if self.validator.validate_protocol_config(clean_config, actual_protocol):
-            # تولید شناسه کانونی
             canonical_id = self.validator.get_canonical_id(clean_config, actual_protocol)
 
             if canonical_id is None:
                 logger.debug(f"شناسه کانونی برای کانفیگ '{actual_protocol}' تولید نشد. نادیده گرفته شد: '{clean_config[:min(len(clean_config), 50)]}...'.")
                 return None
 
-            # اطلاعات پرچم و کشور دیگر اینجا اضافه نمی‌شوند
             logger.debug(f"کانفیگ پردازش شد: '{clean_config[:min(len(clean_config), 50)]}...' (ID: {canonical_id[:min(len(canonical_id), 20)]}...).")
 
             return {
