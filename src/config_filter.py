@@ -1,12 +1,12 @@
 import logging
 import re
-import socket # برای حل کردن دامنه به IP
-from typing import List, Dict, Any, Optional, Union # List, Dict, Union برای سازگاری با نسخه های قدیمی تر پایتون باقی می مانند
+import socket 
+from typing import List, Dict, Any, Optional, Union
 from urllib.parse import urlparse
 
-# وارد کردن کلاس‌ها با مسیر پکیج 'src'
-from src.config import ProxyConfig 
-from src.config_validator import ConfigValidator 
+# **تغییر یافته**: وارد کردن کلاس‌ها بدون پیشوند 'src.'
+from config import ProxyConfig 
+from config_validator import ConfigValidator 
 
 logger = logging.getLogger(__name__)
 
@@ -41,18 +41,16 @@ class ConfigFilter:
                 range_ip, cidr_prefix_str = ip_range.split('/')
                 cidr_prefix = int(cidr_prefix_str)
                 
-                # برای سادگی فعلا فقط /24 و /16 را هندل می‌کنیم،
-                # برای CIDR کامل نیاز به تبدیل به باینری یا استفاده از ipaddress است.
-                if cidr_prefix == 24: # مثلاً 192.168.1.0/24
+                if cidr_prefix == 24: 
                     return ip_address.startswith(range_ip.rsplit('.', 1)[0] + '.')
-                elif cidr_prefix == 16: # مثلاً 192.168.0.0/16
+                elif cidr_prefix == 16: 
                     return ip_address.startswith(range_ip.rsplit('.', 2)[0] + '.')
                 else:
                     logger.warning(f"CIDR '{ip_range}' پشتیبانی نمی‌شود. فقط IP دقیق، /16 و /24 در پیاده‌سازی فعلی.")
                     return False
-            else: # IP دقیق
+            else: 
                 return ip_address == ip_range
-        except ValueError: # اگر IP نامعتبر باشد
+        except ValueError: 
             logger.warning(f"فرمت IP یا CIDR نامعتبر برای فیلتر: '{ip_range}'")
             return False
         except Exception as e:
@@ -71,18 +69,9 @@ class ConfigFilter:
                       ) -> list[Dict[str, str]]: 
         """
         لیست کانفیگ‌ها را بر اساس معیارهای فیلترینگ مشخص شده فیلتر می‌کند.
-        
-        configs: لیستی از دیکشنری‌های کانفیگ، هر کدام شامل 'config', 'protocol', 'flag', 'country', 'canonical_id'.
-        allowed_countries: لیست کدهای کشور (ISO 3166-1 alpha-2، lowercase) که مجاز هستند.
-        blocked_countries: لیست کدهای کشور که مسدود هستند.
-        allowed_protocols: لیست پروتکل‌ها (با '://') که مجاز هستند.
-        blocked_keywords: لیستی از کلمات کلیدی که اگر در کانفیگ یا شناسه کانونی آن باشند، مسدود می‌شوند.
-        blocked_ips: لیستی از آدرس‌های IP یا رنج‌های CIDR که مسدود هستند.
-        blocked_domains: لیستی از دامنه‌ها که مسدود هستند.
         """
         filtered_list: list[Dict[str, str]] = [] 
         
-        # پیش‌پردازش لیست‌ها برای جستجوی کارآمدتر
         allowed_countries_lower = {c.lower() for c in (allowed_countries or [])}
         blocked_countries_lower = {c.lower() for c in (blocked_countries or [])}
         allowed_protocols_lower = {p.lower() for p in (allowed_protocols or [])}
