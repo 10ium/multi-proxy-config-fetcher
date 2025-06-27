@@ -17,7 +17,10 @@ class ConfigValidator:
     def is_base64(s: str) -> bool:
         """بررسی می‌کند که آیا یک رشته Base64 معتبر است یا خیر."""
         try:
+            # Base64 URL-safe (RFC 4648) ممکن است شامل - و _ باشد. padding (=) اختیاری است.
+            # برای اطمینان بیشتر، کاراکترهای URL-safe را به استاندارد تبدیل می‌کنیم
             s_cleaned = s.replace('-', '+').replace('_', '/') 
+            # سپس padding را اضافه می‌کنیم
             padding = len(s_cleaned) % 4
             if padding != 0:
                 s_cleaned += '=' * (4 - padding)
@@ -30,9 +33,11 @@ class ConfigValidator:
     def decode_base64_url(s: str) -> Optional[bytes]:
         """رمزگشایی یک رشته Base64 URL-safe."""
         try:
+            # تبدیل کاراکترهای URL-safe به استاندارد Base64
             s = s.replace('-', '+').replace('_', '/') 
+            # اضافه کردن padding در صورت نیاز
             padding = 4 - (len(s) % 4)
-            if padding != 4: 
+            if padding != 4: # اگر padding لازم نبود (یعنی %4 == 0)، هیچ = اضافه نمی‌شود
                 s += '=' * padding
             return base64.b64decode(s)
         except:
@@ -40,12 +45,16 @@ class ConfigValidator:
 
     @staticmethod
     def decode_base64_text(text: str) -> Optional[str]:
-        """رمزگشایی یک رشته متنی که ممکن است Base64 باشد."""
+        """
+        رمزگشایی یک رشته متنی که ممکن است Base64 باشد.
+        این متد برای دیکد کردن کل یک سابسکریپشن Base64 طراحی شده است.
+        """
         try:
+            # بررسی اولیه Base64 بودن
             if ConfigValidator.is_base64(text):
                 decoded_bytes = ConfigValidator.decode_base64_url(text)
                 if decoded_bytes:
-                    return decoded_bytes.decode('utf-8', errors='ignore') 
+                    return decoded_bytes.decode('utf-8', errors='ignore') # با نادیده گرفتن خطاها دیکد کن
             return None
         except Exception as e:
             logger.debug(f"خطا در decode_base64_text: {e}")
@@ -56,6 +65,8 @@ class ConfigValidator:
         """پاکسازی کانفیگ VMess با حذف بخش‌های اضافی بعد از رشته Base64 اصلی."""
         if "vmess://" in config:
             base64_part = config[8:]
+            # یافتن پایان بخش Base64 با جستجوی اولین کاراکتر غیرمجاز Base64
+            # (مثلاً فاصله، خط جدید، یا سایر کاراکترها)
             base64_clean_match = re.match(r'([A-Za-z0-9+/=_-]*)', base64_part)
             if base64_clean_match:
                 base64_clean = base64_clean_match.group(1)
@@ -73,6 +84,7 @@ class ConfigValidator:
     def clean_ssr_config(config: str) -> str:
         """پاکسازی کانفیگ SSR، اطمینان از شروع با ssr:// و Base64 معتبر."""
         if config.startswith("ssr://"):
+            # بخش Base64 تا قبل از /? یا #
             base64_part_match = re.match(r'ssr://([A-Za-z0-9+/=_-]+)', config)
             if base64_part_match:
                 base64_part = base64_part_match.group(1)
@@ -89,7 +101,7 @@ class ConfigValidator:
             base64_part = config[8:]
             decoded = ConfigValidator.decode_base64_url(base64_part)
             if decoded:
-                json.loads(decoded)
+                json.loads(decoded) # تلاش برای بارگذاری JSON
                 return True
             return False
         except Exception:
@@ -101,12 +113,13 @@ class ConfigValidator:
         try:
             if not config.startswith('ssr://'):
                 return False
-            base64_part = config[6:].split('/?')[0].split('#')[0] 
+            base64_part = config[6:].split('/?')[0].split('#')[0] # بخش Base64 تا قبل از /? یا #
             decoded_bytes = ConfigValidator.decode_base64_url(base64_part)
             if not decoded_bytes:
                 return False
             decoded_str = decoded_bytes.decode('utf-8', errors='ignore') 
             parts = decoded_str.split(':')
+            # SSR معمولاً دارای حداقل 6 بخش است: server:port:protocol:method:obfs:password
             return len(parts) >= 6 
         except Exception:
             return False
@@ -118,6 +131,7 @@ class ConfigValidator:
             if not config.startswith('hysteria://'):
                 return False
             parsed = urlparse(config)
+            # باید شامل netloc (host:port) باشد
             return bool(parsed.netloc and parsed.port) 
         except Exception:
             return False
@@ -129,6 +143,7 @@ class ConfigValidator:
             if not config.startswith('tuic://'):
                 return False
             parsed = urlparse(config)
+            # باید شامل netloc (host:port) و username (UUID) باشد
             return bool(parsed.netloc and parsed.port and parsed.username) 
         except Exception:
             return False
@@ -140,6 +155,7 @@ class ConfigValidator:
             if not config.startswith('mieru://'):
                 return False
             parsed = urlparse(config)
+            # باید شامل netloc (host:port) و username (UUID) باشد
             return bool(parsed.netloc and parsed.username and parsed.port) 
         except Exception:
             return False
@@ -151,6 +167,7 @@ class ConfigValidator:
             if not config.startswith('snell://'):
                 return False
             parsed = urlparse(config)
+            # باید شامل netloc (host:port) و پارامتر psk باشد
             return bool(parsed.netloc and parsed.port and 'psk=' in parsed.query) 
         except Exception:
             return False
@@ -162,6 +179,7 @@ class ConfigValidator:
             if not config.startswith('anytls://'):
                 return False
             parsed = urlparse(config)
+            # باید شامل netloc (host:port) باشد
             return bool(parsed.netloc and parsed.port) 
         except Exception:
             return False
@@ -173,6 +191,7 @@ class ConfigValidator:
             if not config.startswith('ssh://'):
                 return False
             parsed = urlparse(config)
+            # باید شامل netloc (host:port), username و password باشد
             return bool(parsed.netloc and parsed.username and parsed.password and parsed.port) 
         except Exception:
             return False
@@ -184,6 +203,7 @@ class ConfigValidator:
             if not config.startswith('juicity://'):
                 return False
             parsed = urlparse(config)
+            # باید شامل netloc (host:port), username (UUID) و پارامتر password باشد
             return bool(parsed.netloc and parsed.username and parsed.port and 'password=' in parsed.query) 
         except Exception:
             return False
@@ -194,6 +214,7 @@ class ConfigValidator:
         try:
             if not config.startswith('warp://'):
                 return False
+            # برای WARP، فقط شروع با پروتکل کافی است (ساختار داخلی پیچیده است)
             return True 
         except Exception:
             return False
@@ -205,6 +226,7 @@ class ConfigValidator:
             if not config.startswith('wireguard://'):
                 return False
             parsed = urlparse(config)
+            # WireGuard معمولاً شامل یک کلید عمومی در username و یک endpoint است
             return bool(parsed.username and parsed.query and 'endpoint=' in parsed.query)
         except Exception:
             return False
@@ -224,10 +246,11 @@ class ConfigValidator:
         for protocol in protocols:
             if config.startswith(protocol):
                 base64_part = config[len(protocol):]
+                # unquote برای مدیریت encode شده‌های URL در Base64
                 decoded_url = unquote(base64_part) 
                 if (ConfigValidator.is_base64(decoded_url) or 
                     ConfigValidator.is_base64(base64_part)):
-                    return True, protocol[:-3] 
+                    return True, protocol[:-3] # برگرداندن نام پروتکل بدون ://
         return False, ''
 
     @staticmethod
@@ -241,7 +264,7 @@ class ConfigValidator:
                              'hysteria://', 'warp://']
                 for protocol in protocols:
                     if protocol in decoded_text:
-                        return decoded_text 
+                        return decoded_text # اگر حاوی پروتکل بود، متن دیکد شده را برگردان
             return None
         except Exception:
             return None
