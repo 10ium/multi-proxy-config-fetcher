@@ -12,27 +12,19 @@ import concurrent.futures
 import threading
 from collections import defaultdict 
 
-# وارد کردن کلاس‌های ماژولار شده جدید
-from config import ProxyConfig, ChannelConfig
-from config_validator import ConfigValidator
-from source_fetcher import SourceFetcher 
-from config_processor import ConfigProcessor 
-from deduplicator import Deduplicator 
-from connection_tester import ConnectionTester 
-from output_manager import OutputManager 
-from config_filter import ConfigFilter # <--- وارد کردن ConfigFilter جدید
-from user_settings import SOURCE_URLS, SPECIFIC_CONFIG_COUNT, BLOCKED_KEYWORDS, BLOCKED_IPS, BLOCKED_DOMAINS # <--- اضافه کردن تنظیمات فیلترینگ
-from user_settings import ALLOWED_COUNTRIES, BLOCKED_COUNTRIES, ALLOWED_PROTOCOLS # <--- اضافه کردن تنظیمات فیلترینگ
+# وارد کردن کلاس‌های ماژولار شده با مسیر پکیج 'src'
+from src.config import ProxyConfig, ChannelConfig
+from src.config_validator import ConfigValidator
+from src.source_fetcher import SourceFetcher 
+from src.config_processor import ConfigProcessor 
+from src.deduplicator import Deduplicator 
+from src.connection_tester import ConnectionTester 
+from src.output_manager import OutputManager 
+from src.config_filter import ConfigFilter 
+from src.user_settings import SOURCE_URLS, SPECIFIC_CONFIG_COUNT, BLOCKED_KEYWORDS, BLOCKED_IPS, BLOCKED_DOMAINS 
+from src.user_settings import ALLOWED_COUNTRIES, BLOCKED_COUNTRIES, ALLOWED_PROTOCOLS 
 
-# پیکربندی لاگ‌گیری (سطح پیش‌فرض INFO. برای دیدن جزئیات بیشتر به logging.DEBUG تغییر دهید.)
-logging.basicConfig(
-    level=logging.INFO, 
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('proxy_fetcher.log'), 
-        logging.StreamHandler()
-    ]
-)
+# پیکربندی لاگ‌گیری (این پیکربندی در main.py انجام می‌شود)
 logger = logging.getLogger(__name__)
 
 class ConfigFetcher:
@@ -52,10 +44,9 @@ class ConfigFetcher:
         self.config_processor = ConfigProcessor(config, self.validator) 
         self.connection_tester = ConnectionTester(config, self.validator, self.get_location) 
         self.output_manager = OutputManager(config) 
-        self.config_filter = ConfigFilter(config, self.validator) # <--- نمونه‌سازی ConfigFilter
+        self.config_filter = ConfigFilter(config, self.validator) 
         
-        # شمارنده‌های کلی
-        self.protocol_counts: Dict[str, int] = defaultdict(int) # تعداد نهایی کانفیگ‌های فعال هر پروتکل
+        self.protocol_counts: Dict[str, int] = defaultdict(int) 
         self.channel_protocol_counts: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int)) 
         
         self.ip_location_cache: Dict[str, Tuple[str, str]] = {} 
@@ -95,7 +86,6 @@ class ConfigFetcher:
             except Exception as e:
                 logger.warning(f"خطا در بارگذاری URLها از stats.json قبلی: {str(e)}")
 
-    # توابع دریافت موقعیت جغرافیایی (اینها فعلا اینجا می‌مانند)
     def _get_location_from_ip_api(self, ip: str) -> Tuple[str, str]:
         """دریافت موقعیت جغرافیایی از ip-api.com"""
         try:
@@ -279,7 +269,6 @@ class ConfigFetcher:
             available_for_protocol = configs_by_protocol[protocol_prefix]
             
             # تعداد کانفیگی که می‌خواهیم از این پروتکل برای تست انتخاب کنیم
-            # این می‌تواند مثلا 2 یا 3 برابر چیزی باشد که نیاز داریم تا شانس موفقیت بالا برود
             num_to_select = min(len(available_for_protocol), needed_for_protocol * batch_size_multiplier)
             
             selected_batch.extend(available_for_protocol[:num_to_select])
@@ -288,8 +277,6 @@ class ConfigFetcher:
             if current_batch_size >= target_total_batch_size and len(selected_batch) > 0:
                 break 
         
-        # مهم: پس از انتخاب، کانفیگ‌های انتخاب شده باید از unique_processed_configs_pool حذف شوند.
-        # راه ساده اما کارآمد: از canonical_id برای ساخت مجموعه و سپس فیلتر استفاده کنید.
         selected_ids = {cfg['canonical_id'] for cfg in selected_batch}
         unique_processed_configs_pool[:] = [cfg for cfg in unique_processed_configs_pool if cfg['canonical_id'] not in selected_ids]
 
@@ -444,7 +431,6 @@ class ConfigFetcher:
         logger.info(f"فاز ۲ تکمیل شد. لیست منابع اصلی اکنون شامل {len(self.config.SOURCE_URLS)} کانال است (پس از اضافه شدن موارد جدید).")
 
         logger.info("شروع فاز ۳: پردازش و حذف اولیه تکراری‌ها (بر اساس شناسه کانونی) از کل کانفیگ‌های خام به صورت موازی...")
-        # unique_processed_configs_pool شامل کانفیگ‌ها بدون پرچم/کشور است
         unique_processed_configs_pool: List[Dict[str, str]] = [] 
 
         if not all_raw_configs_collected:
@@ -461,7 +447,7 @@ class ConfigFetcher:
                 progress_percentage_phase3 = (processed_raw_count_phase3 / len(all_raw_configs_collected)) * 100
 
                 try:
-                    processed_cfg_data = future.result() # این شامل 'config', 'protocol', 'canonical_id' است
+                    processed_cfg_data = future.result() 
                     if processed_cfg_data:
                         is_unique = self.deduplicator.is_unique_and_add(processed_cfg_data['canonical_id'])
                         if is_unique:
@@ -474,21 +460,26 @@ class ConfigFetcher:
             
         logger.info(f"فاز ۳ تکمیل شد. مجموعاً {len(unique_processed_configs_pool)} کانفیگ منحصر به فرد (بدون پرچم/کشور) آماده تست.")
 
-        logger.info("شروع فاز ۴: تست تدریجی، فیلترینگ اولیه و غنی‌سازی (پرچم/کشور) کانفیگ‌ها به صورت موازی...")
+        logger.info("شروع فاز ۴: تست تدریجی، فیلترینگ و غنی‌سازی (پرچم/کشور) کانفیگ‌ها به صورت موازی...")
         final_tested_and_enriched_configs: List[Dict[str, str]] = []
-        tested_protocol_counts: Dict[str, int] = defaultdict(int) # برای ردیابی تعداد کانفیگ‌های فعال (تست شده) برای هر پروتکل
+        tested_protocol_counts: Dict[str, int] = defaultdict(int) 
 
-        # ادامه تست تا زمانی که به تعداد مورد نیاز برای هر پروتکل برسیم یا هیچ کانفیگ دیگری برای تست نباشد
+        max_attempts_per_batch_loop = 5 
+        current_attempt = 0
+
         while unique_processed_configs_pool and \
               any(tested_protocol_counts.get(p, 0) < self.config.SUPPORTED_PROTOCOLS[p]["max_configs"] 
-                  for p in self.config.SUPPORTED_PROTOCOLS if self.config.SUPPORTED_PROTOCOLS[p]["enabled"]):
+                  for p in self.config.SUPPORTED_PROTOCOLS if self.config.SUPPORTED_PROTOCOLS[p]["enabled"]) and \
+              current_attempt < max_attempts_per_batch_loop: 
             
-            # انتخاب یک دسته جدید برای تست
             batch_to_test = self._select_batch_for_testing(unique_processed_configs_pool, tested_protocol_counts)
             
             if not batch_to_test:
                 logger.info("هیچ کانفیگ جدیدی برای تست در دسته فعلی انتخاب نشد. اتمام فاز ۴.")
-                break
+                current_attempt += 1 
+                continue 
+            
+            current_attempt = 0 
 
             logger.info(f"شروع تست دسته جدید: {len(batch_to_test)} کانفیگ.")
             
@@ -501,10 +492,8 @@ class ConfigFetcher:
                     try:
                         enriched_config_dict = future_test.result()
                         if enriched_config_dict:
-                            # قبل از اضافه کردن به لیست نهایی، فیلترهای پیشرفته را اعمال کن
-                            # با استفاده از تنظیمات از user_settings
                             filtered_result = self.config_filter.filter_configs(
-                                [enriched_config_dict], # فقط یک کانفیگ را برای فیلترینگ ارسال می‌کنیم
+                                [enriched_config_dict], 
                                 allowed_countries=ALLOWED_COUNTRIES,
                                 blocked_countries=BLOCKED_COUNTRIES,
                                 allowed_protocols=ALLOWED_PROTOCOLS,
@@ -512,8 +501,8 @@ class ConfigFetcher:
                                 blocked_ips=BLOCKED_IPS,
                                 blocked_domains=BLOCKED_DOMAINS
                             )
-                            if filtered_result: # اگر فیلتر نشد و باقی ماند
-                                final_tested_and_enriched_configs.append(filtered_result[0]) # همان کانفیگ را اضافه کن
+                            if filtered_result: 
+                                final_tested_and_enriched_configs.append(filtered_result[0]) 
                                 self.protocol_counts[filtered_result[0]['protocol']] += 1
                                 tested_protocol_counts[filtered_result[0]['protocol']] += 1
                                 logger.debug(f"کانفیگ پروتکل '{filtered_result[0]['protocol']}' با موفقیت به لیست نهایی اضافه شد. تعداد فعلی: {tested_protocol_counts[filtered_result[0]['protocol']]}/{self.config.SUPPORTED_PROTOCOLS[filtered_result[0]['protocol']]['max_configs']}")
@@ -528,9 +517,6 @@ class ConfigFetcher:
 
         logger.info(f"فاز ۴ تکمیل شد. مجموعاً {len(final_tested_and_enriched_configs)} کانفیگ تست شده و غنی شده آماده توازن.")
 
-        # بروزرسانی آمار valid_configs و unique_configs در ChannelMetrics
-        # این بخش پیچیده است زیرا پس از تکراری‌زدایی سراسری، ردیابی دقیق منبع هر کانفیگ دشوار می‌شود.
-        # فعلا این مقادیر را بر اساس نتایج کلی Pipeline بروز می‌کنیم.
         total_valid_configs_global = len(final_tested_and_enriched_configs)
         for channel in self.config.SOURCE_URLS:
             channel.metrics.valid_configs = 0 
@@ -545,44 +531,4 @@ class ConfigFetcher:
         logger.info(f"فاز ۵ تکمیل شد. {len(final_configs_balanced)} کانفیگ نهایی پس از توازن آماده ذخیره.")
 
         return final_configs_balanced
-
-# توابع _save_base64_file و save_configs از ConfigFetcher به OutputManager منتقل شده‌اند
-# def _save_base64_file(self, file_path: str, content: str):
-#     ...
-# def save_configs(self, configs: List[Dict[str, str]]):
-#     ...
-
-# تابع main (برای اجرا)
-def main():
-    """
-    تابع اصلی برای اجرای فرآیند واکشی و ذخیره کانفیگ‌ها.
-    """
-    try:
-        logger.info("شروع فرآیند واکشی و پردازش کانفیگ‌ها...")
-        config = ProxyConfig() 
-        fetcher = ConfigFetcher(config) 
-
-        final_configs = fetcher.run_full_pipeline() 
-
-        if final_configs:
-            fetcher.output_manager.save_configs(final_configs)
-            logger.info(f"فرآیند با موفقیت در {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')} به پایان رسید. مجموعاً {len(final_configs)} کانفیگ فعال و تست شده پردازش شد.")
-
-            logger.info("تعداد کانفیگ‌های نهایی بر اساس پروتکل:")
-            for protocol, count in fetcher.protocol_counts.items():
-                logger.info(f"  {protocol}: {count} کانفیگ")
-        else:
-            logger.error("هیچ کانفیگ فعال و معتبری یافت نشد و هیچ فایلی تولید نشد!")
-
-        fetcher.output_manager.save_channel_stats(fetcher.config.SOURCE_URLS, fetcher.deduplicator.get_total_unique_count())
-        logger.info("آمار کانال‌ها ذخیره شد.")
-
-        fetcher.output_manager.generate_overall_report(fetcher.config.SOURCE_URLS, fetcher.protocol_counts)
-        logger.info("گزارش وضعیت کانال‌ها تولید شد.")
-
-    except Exception as e:
-        logger.critical(f"خطای بحرانی در اجرای اصلی: {str(e)}", exc_info=True)
-
-if __name__ == '__main__':
-    main()
 
