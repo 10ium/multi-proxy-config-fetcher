@@ -1,17 +1,26 @@
+import sys
+import os
 import logging
 from datetime import datetime, timezone
+
+# **تغییر یافته**: اضافه کردن مسیر والد src به sys.path برای اطمینان از import صحیح
+# این کار تضمین می کند که پایتون می تواند ماژول های داخل src را پیدا کند.
+script_dir = os.path.dirname(__file__) # مسیر دایرکتوری src/
+project_root = os.path.abspath(os.path.join(script_dir, os.pardir)) # مسیر ریشه پروژه
+if project_root not in sys.path:
+    sys.path.insert(0, project_root) # اضافه کردن ریشه پروژه به sys.path
 
 # وارد کردن کلاس‌های اصلی پروژه با مسیر پکیج 'src'
 from src.config import ProxyConfig
 from src.config_fetcher import ConfigFetcher 
 
-# پیکربندی لاگ‌گیری
+# پیکربندی لاگ‌گیری (این پیکربندی در تمام ماژول‌ها اعمال می‌شود)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.INFO, # <--- می‌توانید برای جزئیات بیشتر به logging.DEBUG تغییر دهید
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('proxy_fetcher.log', encoding='utf-8'),
-        logging.StreamHandler()
+        logging.FileHandler('proxy_fetcher.log', encoding='utf-8'), # ذخیره لاگ‌ها در فایل
+        logging.StreamHandler() # نمایش لاگ‌ها در کنسول
     ]
 )
 logger = logging.getLogger(__name__)
