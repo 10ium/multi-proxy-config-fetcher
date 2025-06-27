@@ -3,16 +3,16 @@ import os
 import logging
 from datetime import datetime, timezone
 
-# **تغییر یافته**: اضافه کردن مسیر والد src به sys.path برای اطمینان از import صحیح
-# این کار تضمین می کند که پایتون می تواند ماژول های داخل src را پیدا کند.
-script_dir = os.path.dirname(__file__) # مسیر دایرکتوری src/
-project_root = os.path.abspath(os.path.join(script_dir, os.pardir)) # مسیر ریشه پروژه
-if project_root not in sys.path:
-    sys.path.insert(0, project_root) # اضافه کردن ریشه پروژه به sys.path
+# **تغییر یافته**: اضافه کردن مسیر دایرکتوری src به sys.path
+# این کار تضمین می کند که پایتون می تواند ماژول ها را مستقیماً از داخل src/ پیدا کند.
+script_dir = os.path.dirname(__file__) # مسیر فعلی فایل main.py (یعنی /home/runner/work/.../src)
+if script_dir not in sys.path:
+    sys.path.insert(0, script_dir) # اضافه کردن دایرکتوری src/ به sys.path
 
-# وارد کردن کلاس‌های اصلی پروژه با مسیر پکیج 'src'
-from src.config import ProxyConfig
-from src.config_fetcher import ConfigFetcher 
+# وارد کردن کلاس‌های اصلی پروژه **بدون پیشوند src.**.
+# اکنون که src/ در sys.path است، پایتون باید بتواند آنها را پیدا کند.
+from config import ProxyConfig
+from config_fetcher import ConfigFetcher 
 
 # پیکربندی لاگ‌گیری (این پیکربندی در تمام ماژول‌ها اعمال می‌شود)
 logging.basicConfig(
@@ -25,8 +25,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- DEBUG PRINT --- این خط برای عیب‌یابی اولیه اضافه شده است. پس از رفع مشکل می‌توانید آن را حذف کنید.
-print("--- DEBUG: main.py started ---")
+print("--- DEBUG: main.py started ---") # برای عیب‌یابی
 
 def main():
     """
