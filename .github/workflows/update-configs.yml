@@ -72,14 +72,12 @@ jobs:
 
     - name: Run Proxy Fetcher Script
       # **تغییر یافته**: اجرای اسکریپت اصلی main.py با استفاده از 'python -m'
+      # خط export PYTHONPATH حذف شده است، زیرا مدیریت مسیر در main.py انجام می‌شود.
       run: |
-        # با استفاده از 'python -m src.main'، پایتون 'src' را به عنوان یک پکیج در نظر می‌گیرد
-        # و ماژول‌های داخلی آن (مانند config_fetcher) را به درستی پیدا می‌کند.
         python -m src.main
       continue-on-error: true 
 
     - name: Convert configs to Singbox format (if still separate and in src/)
-      # این گام همچنان به main.py وابسته است که باید فایل‌ها را تولید کند.
       run: python src/ConfigToSingbox.py 
       continue-on-error: true
 
