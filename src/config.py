@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import logging
 import os 
 
-# **تغییر یافته**: وارد کردن از user_settings بدون پیشوند 'src.'
+# وارد کردن از user_settings بدون پیشوند 'src.'
 from user_settings import SOURCE_URLS, USE_MAXIMUM_POWER, SPECIFIC_CONFIG_COUNT, ENABLED_PROTOCOLS, MAX_CONFIG_AGE_DAYS
 
 # پیکربندی لاگ‌گیری (این پیکربندی باید در main.py انجام شود و در اینجا فقط لاگر ایجاد می‌شود)
@@ -106,7 +106,7 @@ class ProxyConfig:
         logger.info(f"حداکثر عمر کانفیگ‌ها: {self.MAX_CONFIG_AGE_DAYS} روز.")
 
         # بارگذاری URLهای منبع اولیه از user_settings.py
-        if initial_source_urls === None:
+        if initial_source_urls == None: # <--- اینجا تغییر کرده است
             initial_urls_list = SOURCE_URLS
             logger.info(f"URLهای منبع اولیه از 'user_settings.py' بارگذاری شدند. ({len(initial_urls_list)} URL)")
         else:
