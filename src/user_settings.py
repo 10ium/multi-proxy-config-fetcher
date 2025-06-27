@@ -3,7 +3,9 @@
 # List of source URLs to fetch proxy configurations from.
 # Add or remove URLs as needed. All URLs in this list are automatically enabled.
 # توصیه می‌شود از URLهای معتبر و عمومی استفاده کنید تا از مسدود شدن IP خود جلوگیری شود.
+# **تغییر یافته**: لینک‌های سایت‌ها/فایل‌های خام بالاتر از لینک‌های تلگرام قرار گرفته‌اند.
 SOURCE_URLS = [
+    # --- لینک‌های فایل‌های خام / وب‌سایت‌ها (اولویت بالاتر) ---
     "https://raw.githubusercontent.com/4n0nymou3/wg-config-fetcher/refs/heads/main/configs/wireguard_configs.txt",
     "https://raw.githubusercontent.com/4n0nymou3/ss-config-updater/refs/heads/main/configs.txt",
     "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mci/sub_1.txt",
@@ -14,7 +16,14 @@ SOURCE_URLS = [
     "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/sub_2.txt",
     "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/sub_3.txt",
     "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/sub_4.txt",
+    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/juicity",
+    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/tuic",
+    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/reality",
+    "https://raw.githubusercontent.com/huibq/trojanlinks/refs/heads/master/links/ssr",
+    "https://raw.githubusercontent.com/hiddify/hiddify-next/refs/heads/main/test.configs/warp",
+    "https://raw.githubusercontent.com/ircfspace/warpsub/refs/heads/main/export/warp",
 
+    # --- لینک‌های کانال تلگرام ---
     "https://t.me/s/shadowsocksm",
     "https://t.me/s/v2ray_alpha",
     "https://t.me/s/vlessconfig",
@@ -152,13 +161,6 @@ SOURCE_URLS = [
     "https://t.me/s/beau_vpn",
     "https://t.me/s/mitivpn",
     "https://t.me/s/mbtiuniverse",
-    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/juicity",
-    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/tuic",
-    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/reality",
-    "https://raw.githubusercontent.com/huibq/trojanlinks/refs/heads/master/links/ssr",
-    "https://raw.githubusercontent.com/hiddify/hiddify-next/refs/heads/main/test.configs/warp",
-    "https://raw.githubusercontent.com/ircfspace/warpsub/refs/heads/main/export/warp",
-
     "https://t.me/s/rayan_config",
     "https://t.me/s/configshubplus",
     "https://t.me/s/configx2ray",
