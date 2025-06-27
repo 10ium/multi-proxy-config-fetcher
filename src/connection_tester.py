@@ -9,6 +9,7 @@ from typing import Dict, Optional, Tuple, Callable, List, Any
 from urllib.parse import urlparse
 
 # **تغییر یافته**: وارد کردن کلاس‌ها بدون پیشوند 'src.'
+# (زیرا main.py مسیر src/ را به sys.path اضافه می‌کند)
 from config import ProxyConfig 
 from config_validator import ConfigValidator 
 import requests 
