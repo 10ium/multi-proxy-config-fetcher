@@ -50,7 +50,6 @@ class OutputManager:
         os.makedirs(self.config.BASE64_OUTPUT_DIR, exist_ok=True)
         os.makedirs(self.config.SINGBOX_OUTPUT_DIR, exist_ok=True)
 
-        # هدر استاندارد برای فایل‌های سابسکریپشن
         header = """//profile-title: base64:8J+RvUFub255bW91cy3wnZWP
 //profile-update-interval: 1
 //subscription-userinfo: upload=0; download=0; total=10737418240000000; expire=2546249531
@@ -58,13 +57,11 @@ class OutputManager:
 //profile-web-page-url: https://github.com/4n0nymou3
 
 """
-        # ساخت محتوای فایل اصلی کانفیگ‌های متنی
         full_text_lines = []
         for cfg_dict in configs:
             full_text_lines.append(f"{cfg_dict['flag']} {cfg_dict['country']} {cfg_dict['config']}")
         full_text_content = header + '\n\n'.join(full_text_lines) + '\n'
 
-        # ذخیره فایل اصلی متنی
         full_file_path = os.path.join(self.config.TEXT_OUTPUT_DIR, 'proxy_configs.txt')
         try:
             with open(full_file_path, 'w', encoding='utf-8') as f:
@@ -73,11 +70,9 @@ class OutputManager:
         except Exception as e:
             logger.error(f"خطا در ذخیره فایل کامل کانفیگ: {str(e)}")
 
-        # ذخیره فایل اصلی Base64 شده
         base64_full_file_path = os.path.join(self.config.BASE64_OUTPUT_DIR, "proxy_configs_base64.txt")
         self._save_base64_file(base64_full_file_path, full_text_content)
 
-        # تفکیک و ذخیره کانفیگ‌ها بر اساس پروتکل
         protocol_configs_separated: Dict[str, List[Dict[str, str]]] = defaultdict(list)
         for cfg_dict in configs:
             protocol_full_name = cfg_dict['protocol']
