@@ -194,7 +194,7 @@ class ConnectionTester:
         
         if port and protocol not in ["warp://"]: 
             if not self._ping_test(server_address, port):
-                logger.debug(f"کانفیگ '{config_string[:min(len(config_string), 50)]}...' تست پینگ/پورت را رد کرد. نadideh گرفته شد.")
+                logger.debug(f"کانفیگ '{config_string[:min(len(config_string), 50)]}...' تست پینگ/پورت را رد کرد. نادیده گرفته شد.")
                 return None
         elif not port:
             logger.debug(f"پورت برای کانفیگ '{config_string[:min(len(config_string), 50)]}...' یافت نشد. تست پینگ نادیده گرفته شد.")
