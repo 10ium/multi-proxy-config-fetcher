@@ -9,9 +9,9 @@ from typing import List, Dict, Optional, Tuple, Any
 from bs4 import BeautifulSoup
 import base64 
 
-# وارد کردن کلاس‌ها با مسیر پکیج 'src'
-from src.config import ProxyConfig, ChannelConfig 
-from src.config_validator import ConfigValidator 
+# **تغییر یافته**: وارد کردن کلاس‌ها بدون پیشوند 'src.'
+from config import ProxyConfig, ChannelConfig 
+from config_validator import ConfigValidator 
 
 logger = logging.getLogger(__name__)
 
