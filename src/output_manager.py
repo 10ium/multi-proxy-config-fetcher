@@ -4,11 +4,11 @@ import logging
 import base64
 from datetime import datetime, timezone
 from typing import List, Dict, Any, TYPE_CHECKING
-from collections import defaultdict # برای استفاده از defaultdict در نمودار پروتکل‌ها
+from collections import defaultdict 
 
 # برای جلوگیری از خطای import دایره‌ای (circular import)، از TYPE_CHECKING استفاده می‌کنیم
 if TYPE_CHECKING:
-    from config import ProxyConfig, ChannelConfig
+    from src.config import ProxyConfig, ChannelConfig 
 
 # وارد کردن Matplotlib برای تولید نمودارها
 import matplotlib.pyplot as plt
@@ -77,17 +77,14 @@ class OutputManager:
         self._save_base64_file(base64_full_file_path, full_text_content)
 
         # تفکیک و ذخیره کانفیگ‌ها بر اساس پروتکل
-        # از defaultdict استفاده می‌کنیم تا نیازی به مقداردهی اولیه برای همه پروتکل‌ها نباشد.
         protocol_configs_separated: Dict[str, List[Dict[str, str]]] = defaultdict(list)
         for cfg_dict in configs:
             protocol_full_name = cfg_dict['protocol']
-            # نرمال‌سازی پروتکل‌های مستعار برای تفکیک فایل‌ها
             if protocol_full_name.startswith('hy2://'):
                 protocol_full_name = 'hysteria2://'
             elif protocol_full_name.startswith('hy1://'):
                 protocol_full_name = 'hysteria://'
             
-            # فقط پروتکل‌های پشتیبانی شده را در نظر می‌گیریم
             if protocol_full_name in self.config.SUPPORTED_PROTOCOLS:
                  protocol_configs_separated[protocol_full_name].append(cfg_dict)
             else:
@@ -135,8 +132,6 @@ class OutputManager:
                 "url": channel.url,
                 "enabled": channel.enabled,
                 "total_configs_fetched_raw": channel.metrics.total_configs,
-                # valid_configs_processed و unique_configs_found در حال حاضر به طور دقیق برای هر کانال بروز نمی‌شوند.
-                # اینها باید در فاز تست و فیلترینگ با ردیابی دقیق منبع کانفیگ بروز شوند.
                 "valid_configs_processed": channel.metrics.valid_configs, 
                 "unique_configs_found": channel.metrics.unique_configs, 
                 "avg_response_time": round(channel.metrics.avg_response_time, 2),
@@ -151,7 +146,7 @@ class OutputManager:
 
         stats_file_path = os.path.join(self.config.OUTPUT_DIR, 'channel_stats.json')
         try:
-            os.makedirs(os.path.dirname(stats_file_path), exist_ok=True) # اطمینان از وجود دایرکتوری
+            os.makedirs(os.path.dirname(stats_file_path), exist_ok=True) 
             with open(stats_file_path, 'w', encoding='utf-8') as f:
                 json.dump(stats_data, f, indent=4, ensure_ascii=False)
             logger.info(f"آمار کانال‌ها با موفقیت در '{stats_file_path}' ذخیره شد.")
@@ -172,7 +167,6 @@ class OutputManager:
 
         if not protocols_present or sum(counts_present) == 0:
             logger.warning("داده‌ای برای تولید نمودار توزیع پروتکل‌ها وجود ندارد.")
-            # ایجاد یک نمودار خالی یا پیام‌دهنده
             fig, ax = plt.subplots(figsize=(10, 6))
             ax.text(0.5, 0.5, "هیچ داده‌ای برای نمودار پروتکل یافت نشد.", 
                     horizontalalignment='center', verticalalignment='center', 
@@ -185,9 +179,7 @@ class OutputManager:
             return chart_path
 
 
-        # مرتب‌سازی برای نمایش بهتر در نمودار (پروتکل‌های با تعداد بیشتر اول)
         sorted_data = sorted(zip(protocols_present, counts_present), key=lambda item: item[1], reverse=True)
-        # حذف '://' از نام پروتکل برای نمایش تمیزتر در نمودار
         sorted_protocols = [item[0].replace('://', '') for item in sorted_data] 
         sorted_counts = [item[1] for item in sorted_data]
 
@@ -197,16 +189,15 @@ class OutputManager:
         ax.set_xlabel("پروتکل", fontsize=12)
         ax.set_ylabel("تعداد کانفیگ‌های فعال", fontsize=12)
         ax.set_title("توزیع کانفیگ‌های فعال بر اساس پروتکل", fontsize=14)
-        ax.tick_params(axis='x', rotation=45) # چرخش لیبل‌های X برای خوانایی بهتر
+        ax.tick_params(axis='x', rotation=45) 
 
-        # افزودن مقدار بالای هر ستون
         for bar in bars:
             yval = bar.get_height()
             ax.text(bar.get_x() + bar.get_width()/2, yval + 0.5, yval, ha='center', va='bottom', fontsize=10)
 
-        plt.tight_layout() # تنظیم layout برای جلوگیری از همپوشانی
+        plt.tight_layout() 
         plt.savefig(chart_path, format='svg', bbox_inches='tight')
-        plt.close(fig) # بستن شکل برای آزادسازی حافظه
+        plt.close(fig) 
         logger.info(f"نمودار توزیع پروتکل‌ها با موفقیت در '{chart_path}' ذخیره شد.")
         return chart_path
 
@@ -219,11 +210,8 @@ class OutputManager:
         report_path = os.path.join("assets", "performance_report.html")
         os.makedirs(os.path.dirname(report_path), exist_ok=True)
 
-        # تولید نمودارها
         protocol_chart_path = self._generate_protocol_distribution_chart(protocol_counts)
-        # می‌توانید نمودارهای دیگری را نیز اینجا اضافه کنید (مثلاً روند زمان پاسخ کانال‌ها)
 
-        # داده‌های جدول کانال‌ها
         channels_data = sorted(source_channels, key=lambda c: c.metrics.overall_score, reverse=True)
 
         html_content = f"""
@@ -240,8 +228,8 @@ class OutputManager:
             margin: 0; padding: 20px; 
             background-color: #f0f2f5; 
             color: #333; 
-            direction: rtl; /* RTL */
-            text-align: right; /* RTL */
+            direction: rtl; 
+            text-align: right; 
         }}
         .container {{ 
             max-width: 1000px; 
@@ -281,12 +269,12 @@ class OutputManager:
             margin-top: 30px; 
             box-shadow: 0 2px 8px rgba(0,0,0,0.05); 
             border-radius: 8px; 
-            overflow: hidden; /* For rounded corners */
+            overflow: hidden; 
         }}
         th, td {{ 
             border: 1px solid #e0e0e0; 
             padding: 12px 15px; 
-            text-align: right; /* RTL */
+            text-align: right; 
         }}
         th {{ 
             background-color: #34495e; 
