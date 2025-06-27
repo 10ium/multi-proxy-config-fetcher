@@ -3,18 +3,22 @@ import os
 import logging
 from datetime import datetime, timezone
 
-# اضافه کردن مسیر دایرکتوری src به sys.path برای اطمینان از وارد کردن صحیح ماژول‌ها
-script_dir = os.path.dirname(__file__) 
-if script_dir not in sys.path:
-    sys.path.insert(0, script_dir) 
+# **تغییر یافته**: اضافه کردن مسیر والد دایرکتوری src به sys.path
+# این تنها جایی است که sys.path دستکاری می‌شود.
+# این تضمین می کند که پایتون می تواند پکیج src را پیدا کند.
+# os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir)) به مسیر ریشه مخزن اشاره دارد.
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root) # اضافه کردن ریشه پروژه به sys.path
 
-# وارد کردن کلاس‌های اصلی پروژه (بدون پیشوند 'src.'، زیرا مسیر در sys.path تنظیم شده است)
-from config import ProxyConfig
-from config_fetcher import ConfigFetcher 
+# وارد کردن کلاس‌های اصلی پروژه **با وارد کردن مطلق به عنوان پکیج src.**
+# این بار، با توجه به اینکه ریشه پروژه به sys.path اضافه شده، اینها باید کار کنند.
+from src.config import ProxyConfig
+from src.config_fetcher import ConfigFetcher 
 
-# **تغییر یافته**: پیکربندی لاگ‌گیری به سطح DEBUG برای دریافت جزئیات بیشتر
+# پیکربندی لاگ‌گیری (این پیکربندی در تمام ماژول‌ها اعمال می‌شود)
 logging.basicConfig(
-    level=logging.DEBUG, # <--- اینجا به DEBUG تغییر یافت
+    level=logging.INFO, # <--- می‌توانید برای جزئیات بیشتر به logging.DEBUG تغییر دهید (برای این اجرا، DEBUG را امتحان کنید)
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('proxy_fetcher.log', encoding='utf-8'), # ذخیره لاگ‌ها در فایل
@@ -23,7 +27,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-print("--- DEBUG: main.py started ---") # برای عیب‌یابی اولیه
+# --- DEBUG PRINT --- این خط برای عیب‌یابی اولیه اضافه شده است. پس از رفع مشکل می‌توانید آن را حذف کنید.
+print("--- DEBUG: main.py started (with sys.path hack) ---")
 
 def main():
     """
