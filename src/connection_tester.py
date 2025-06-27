@@ -8,9 +8,9 @@ import time
 from typing import Dict, Optional, Tuple, Callable, List, Any
 from urllib.parse import urlparse
 
-# وارد کردن کلاس‌ها با مسیر پکیج 'src'
-from src.config import ProxyConfig 
-from src.config_validator import ConfigValidator 
+# **تغییر یافته**: وارد کردن کلاس‌ها بدون پیشوند 'src.'
+from config import ProxyConfig 
+from config_validator import ConfigValidator 
 import requests 
 
 logger = logging.getLogger(__name__)
@@ -194,7 +194,7 @@ class ConnectionTester:
         
         if port and protocol not in ["warp://"]: 
             if not self._ping_test(server_address, port):
-                logger.debug(f"کانفیگ '{config_string[:min(len(config_string), 50)]}...' تست پینگ/پورت را رد کرد. نادیده گرفته شد.")
+                logger.debug(f"کانفیگ '{config_string[:min(len(config_string), 50)]}...' تست پینگ/پورت را رد کرد. نadideh گرفته شد.")
                 return None
         elif not port:
             logger.debug(f"پورت برای کانفیگ '{config_string[:min(len(config_string), 50)]}...' یافت نشد. تست پینگ نادیده گرفته شد.")
@@ -204,7 +204,7 @@ class ConnectionTester:
             if not self._test_with_mihomo(config_string):
                 logger.debug(f"کانفیگ '{config_string[:min(len(config_string), 50)]}...' تست Mihomo را رد کرد. نادیده گرفته شد.")
                 return None
-            logger.debug(f"کانفیg '{config_string[:min(len(config_string), 50)]}...' تست Mihomo را با موفقیت پشت سر گذاشت.")
+            logger.debug(f"کانفیگ '{config_string[:min(len(config_string), 50)]}...' تست Mihomo را با موفقیت پشت سر گذاشت.")
         else:
             logger.debug(f"پروتکل '{protocol}' توسط Mihomo تست نمی‌شود. از تست Mihomo صرف نظر شد و معتبر فرض شد.")
 
