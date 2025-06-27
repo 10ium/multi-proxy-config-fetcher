@@ -13,6 +13,7 @@ import threading
 from collections import defaultdict 
 
 # **تغییر یافته**: وارد کردن کلاس‌ها بدون پیشوند 'src.'
+# (زیرا main.py مسیر src/ را به sys.path اضافه می‌کند)
 from config import ProxyConfig, ChannelConfig
 from config_validator import ConfigValidator
 from source_fetcher import SourceFetcher 
@@ -129,7 +130,7 @@ class ConfigFetcher:
             if response.status_code == 200:
                 data = response.json()
                 if data.get('country_code') and data.get('country_name'):
-                    return data['country_code'].lower(), data['country']
+                    return data['country_code'].lower(), data['country_name']
         except Exception as e:
             logger.debug(f"خطا در API ipdata.co برای IP {ip}: {str(e)}")
         return '', ''
