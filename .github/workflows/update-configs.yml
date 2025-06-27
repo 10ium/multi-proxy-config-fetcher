@@ -71,12 +71,11 @@ jobs:
         mkdir -p assets 
 
     - name: Run Proxy Fetcher Script
-      # **تغییر یافته**: اجرای اسکریپت اصلی main.py.
-      # اضافه کردن src/ به PYTHONPATH
+      # **تغییر یافته**: اجرای اسکریپت اصلی main.py با استفاده از 'python -m'
       run: |
-        # این خط دایرکتوری src را به PYTHONPATH اضافه می‌کند تا ماژول‌ها قابل import باشند.
-        export PYTHONPATH=$PYTHONPATH:$(pwd)/src
-        python src/main.py
+        # با استفاده از 'python -m src.main'، پایتون 'src' را به عنوان یک پکیج در نظر می‌گیرد
+        # و ماژول‌های داخلی آن (مانند config_fetcher) را به درستی پیدا می‌کند.
+        python -m src.main
       continue-on-error: true 
 
     - name: Convert configs to Singbox format (if still separate and in src/)
