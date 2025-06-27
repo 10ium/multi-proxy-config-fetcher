@@ -3,14 +3,17 @@ import os
 import logging
 from datetime import datetime, timezone
 
-# **تغییر یافته**: حذف منطق sys.path.insert در main.py
-# این کار اکنون به نحوه اجرای 'python -m src.main' و
-# فایل __init__.py و importهای نسبی واگذار می‌شود.
+# **تغییر یافته**: اضافه کردن مسیر دایرکتوری src به sys.path
+# این کار تضمین می کند که پایتون می تواند ماژول ها را مستقیماً از داخل src/ پیدا کند.
+# script_dir مسیر فعلی فایل main.py (یعنی /home/runner/work/.../src)
+script_dir = os.path.dirname(__file__) 
+if script_dir not in sys.path:
+    sys.path.insert(0, script_dir) # اضافه کردن دایرکتوری src/ به sys.path
 
-# وارد کردن کلاس‌های اصلی پروژه با وارد کردن‌های نسبی
-# وقتی 'python -m src.main' اجرا می‌شود، 'src' به عنوان پکیج اصلی شناخته می‌شود.
-from .config import ProxyConfig
-from .config_fetcher import ConfigFetcher 
+# وارد کردن کلاس‌های اصلی پروژه **بدون پیشوند src.**.
+# اکنون که src/ در sys.path است، پایتون باید بتواند آنها را پیدا کند.
+from config import ProxyConfig
+from config_fetcher import ConfigFetcher 
 
 # پیکربندی لاگ‌گیری (این پیکربندی در تمام ماژول‌ها اعمال می‌شود)
 logging.basicConfig(
