@@ -9,7 +9,7 @@ import os
 # **تغییر یافته**: وارد کردن از user_settings بدون پیشوند 'src.'
 from user_settings import SOURCE_URLS, USE_MAXIMUM_POWER, SPECIFIC_CONFIG_COUNT, ENABLED_PROTOCOLS, MAX_CONFIG_AGE_DAYS
 
-# پیکربندی لاگ‌گیری (این پیکربندی باید در main.py انجام شود و در اینجا فقط لاگر ایجاد می‌شود)
+# پیکربندی لاگ‌گیری (این پیکربندی در main.py انجام می‌شود و در اینجا فقط لاگر ایجاد می‌شود)
 logger = logging.getLogger(__name__)
 
 @dataclass
