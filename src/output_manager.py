@@ -7,8 +7,9 @@ from typing import List, Dict, Any, TYPE_CHECKING
 from collections import defaultdict 
 
 # برای جلوگیری از خطای import دایره‌ای (circular import)، از TYPE_CHECKING استفاده می‌کنیم
+# **تغییر یافته**: وارد کردن از config بدون پیشوند 'src.'
 if TYPE_CHECKING:
-    from src.config import ProxyConfig, ChannelConfig 
+    from config import ProxyConfig, ChannelConfig 
 
 # وارد کردن Matplotlib برای تولید نمودارها
 import matplotlib.pyplot as plt
