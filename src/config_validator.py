@@ -1,722 +1,223 @@
-import re
-import base64
+import logging
+import socket
+import subprocess
+import tempfile
+import os
 import json
-import logging 
-from typing import Optional, Tuple, List, Dict, Any
-from urllib.parse import unquote, urlparse, parse_qs
+import time
+from typing import Dict, Optional, Tuple, Callable, List, Any
+from urllib.parse import urlparse
+
+# **تغییر یافته**: وارد کردن کلاس‌ها بدون پیشوند 'src.'
+# (زیرا main.py مسیر src/ را به sys.path اضافه می‌کند)
+from config import ProxyConfig 
+from config_validator import ConfigValidator 
+import requests 
 
 logger = logging.getLogger(__name__)
 
-class ConfigValidator:
+class ConnectionTester:
     """
-    کلاس ConfigValidator برای اعتبارسنجی، پاکسازی و استخراج اطلاعات از رشته‌های کانفیگ پراکسی.
-    این کلاس مسئول شناسایی، تجزیه و اعتبارسنجی پروتکل‌های مختلف و همچنین استخراج
-    شناسه‌های کانونی برای حذف دقیق تکراری‌ها است.
+    کلاس ConnectionTester مسئول تست اتصال کانفیگ‌ها به صورت دو مرحله‌ای:
+    ۱. تست پورت سبک و سریع
+    ۲. تست عملکردی با Mihomo (برای پروتکل‌های پشتیبانی شده)
+    همچنین موقعیت جغرافیایی (پرچم و کشور) را به کانفیگ‌های فعال اضافه می‌کند.
     """
-    @staticmethod
-    def is_base64(s: str) -> bool:
-        """بررسی می‌کند که آیا یک رشته Base64 معتبر است یا خیر."""
-        try:
-            # Base64 URL-safe (RFC 4648) ممکن است شامل - و _ باشد. padding (=) اختیاری است.
-            # برای اطمینان بیشتر، کاراکترهای URL-safe را به استاندارد تبدیل می‌کنیم
-            s_cleaned = s.replace('-', '+').replace('_', '/') 
-            # سپس padding را اضافه می‌کنیم
-            padding = len(s_cleaned) % 4
-            if padding != 0:
-                s_cleaned += '=' * (4 - padding)
-            base64.b64decode(s_cleaned)
-            return True
-        except:
-            return False
-
-    @staticmethod
-    def decode_base64_url(s: str) -> Optional[bytes]:
-        """رمزگشایی یک رشته Base64 URL-safe."""
-        try:
-            # تبدیل کاراکترهای URL-safe به استاندارد Base64
-            s = s.replace('-', '+').replace('_', '/') 
-            # اضافه کردن padding در صورت نیاز
-            padding = 4 - (len(s) % 4)
-            if padding != 4: # اگر padding لازم نبود (یعنی %4 == 0)، هیچ = اضافه نمی‌شود
-                s += '=' * padding
-            return base64.b64decode(s)
-        except:
-            return None
-
-    @staticmethod
-    def decode_base64_text(text: str) -> Optional[str]:
+    def __init__(self, config: ProxyConfig, validator: ConfigValidator, get_location_func: Callable[[str], Tuple[str, str]]):
         """
-        رمزگشایی یک رشته متنی که ممکن است Base64 باشد.
-        این متد برای دیکد کردن کل یک سابسکریپشن Base64 طراحی شده است.
+        سازنده ConnectionTester.
+        config: یک نمونه از ProxyConfig.
+        validator: یک نمونه از ConfigValidator.
+        get_location_func: تابعی که آدرس سرور را می‌گیرد و پرچم و کشور (str, str) را برمی‌گرداند.
+                           این تابع از ConfigFetcher به عنوان GeoIPResolver تزریق می‌شود.
         """
-        try:
-            # بررسی اولیه Base64 بودن
-            if ConfigValidator.is_base64(text):
-                decoded_bytes = ConfigValidator.decode_base64_url(text)
-                if decoded_bytes:
-                    return decoded_bytes.decode('utf-8', errors='ignore') # با نادیده گرفتن خطاها دیکد کن
-            return None
-        except Exception as e:
-            logger.debug(f"خطا در decode_base64_text: {e}")
-            return None
-
-    @staticmethod
-    def clean_vmess_config(config: str) -> str:
-        """پاکسازی کانفیگ VMess با حذف بخش‌های اضافی بعد از رشته Base64 اصلی."""
-        if "vmess://" in config:
-            base64_part = config[8:]
-            # یافتن پایان بخش Base64 با جستجوی اولین کاراکتر غیرمجاز Base64
-            # (مثلاً فاصله، خط جدید، یا سایر کاراکترها)
-            base64_clean_match = re.match(r'([A-Za-z0-9+/=_-]*)', base64_part)
-            if base64_clean_match:
-                base64_clean = base64_clean_match.group(1)
-                return f"vmess://{base64_clean}"
-        return config
-
-    @staticmethod
-    def normalize_hysteria2_protocol(config: str) -> str:
-        """نرمال‌سازی 'hy2://' به 'hysteria2://'."""
-        if config.startswith('hy2://'):
-            return config.replace('hy2://', 'hysteria2://', 1)
-        return config
-
-    @staticmethod
-    def clean_ssr_config(config: str) -> str:
-        """پاکسازی کانفیگ SSR، اطمینان از شروع با ssr:// و Base64 معتبر."""
-        if config.startswith("ssr://"):
-            # بخش Base64 تا قبل از /? یا #
-            base64_part_match = re.match(r'ssr://([A-Za-z0-9+/=_-]+)', config)
-            if base64_part_match:
-                base64_part = base64_part_match.group(1)
-                if ConfigValidator.is_base64(base64_part):
-                    return f"ssr://{base64_part}"
-        return config
-
-    @staticmethod
-    def is_vmess_config(config: str) -> bool:
-        """بررسی اعتبار یک کانفیگ VMess."""
-        try:
-            if not config.startswith('vmess://'):
-                return False
-            base64_part = config[8:]
-            decoded = ConfigValidator.decode_base64_url(base64_part)
-            if decoded:
-                json.loads(decoded) # تلاش برای بارگذاری JSON
-                return True
-            return False
-        except Exception:
-            return False
-
-    @staticmethod
-    def is_ssr_config(config: str) -> bool:
-        """بررسی اعتبار یک کانفیگ SSR با تلاش برای دیکد کردن بخش Base64 آن."""
-        try:
-            if not config.startswith('ssr://'):
-                return False
-            base64_part = config[6:].split('/?')[0].split('#')[0] # بخش Base64 تا قبل از /? یا #
-            decoded_bytes = ConfigValidator.decode_base64_url(base64_part)
-            if not decoded_bytes:
-                return False
-            decoded_str = decoded_bytes.decode('utf-8', errors='ignore') 
-            parts = decoded_str.split(':')
-            # SSR معمولاً دارای حداقل 6 بخش است: server:port:protocol:method:obfs:password
-            return len(parts) >= 6 
-        except Exception:
-            return False
-
-    @staticmethod
-    def is_hysteria_config(config: str) -> bool:
-        """بررسی اعتبار یک کانفیگ Hysteria 1."""
-        try:
-            if not config.startswith('hysteria://'):
-                return False
-            parsed = urlparse(config)
-            # باید شامل netloc (host:port) باشد
-            return bool(parsed.netloc and parsed.port) 
-        except Exception:
-            return False
-
-    @staticmethod
-    def is_tuic_config(config: str) -> bool:
-        """بررسی اعتبار یک کانفیگ TUIC."""
-        try:
-            if not config.startswith('tuic://'):
-                return False
-            parsed = urlparse(config)
-            # باید شامل netloc (host:port) و username (UUID) باشد
-            return bool(parsed.netloc and parsed.port and parsed.username) 
-        except Exception:
-            return False
-
-    @staticmethod
-    def is_mieru_config(config: str) -> bool:
-        """بررسی اعتبار یک کانفیگ Mieru."""
-        try:
-            if not config.startswith('mieru://'):
-                return False
-            parsed = urlparse(config)
-            # باید شامل netloc (host:port) و username (UUID) باشد
-            return bool(parsed.netloc and parsed.username and parsed.port) 
-        except Exception:
-            return False
-
-    @staticmethod
-    def is_snell_config(config: str) -> bool:
-        """بررسی اعتبار یک کانفیگ Snell."""
-        try:
-            if not config.startswith('snell://'):
-                return False
-            parsed = urlparse(config)
-            # باید شامل netloc (host:port) و پارامتر psk باشد
-            return bool(parsed.netloc and parsed.port and 'psk=' in parsed.query) 
-        except Exception:
-            return False
-
-    @staticmethod
-    def is_anytls_config(config: str) -> bool:
-        """بررسی اعتبار یک کانفیگ Anytls."""
-        try:
-            if not config.startswith('anytls://'):
-                return False
-            parsed = urlparse(config)
-            # باید شامل netloc (host:port) باشد
-            return bool(parsed.netloc and parsed.port) 
-        except Exception:
-            return False
-
-    @staticmethod
-    def is_ssh_config(config: str) -> bool:
-        """بررسی اعتبار یک کانفیگ SSH."""
-        try:
-            if not config.startswith('ssh://'):
-                return False
-            parsed = urlparse(config)
-            # باید شامل netloc (host:port), username و password باشد
-            return bool(parsed.netloc and parsed.username and parsed.password and parsed.port) 
-        except Exception:
-            return False
-
-    @staticmethod
-    def is_juicity_config(config: str) -> bool:
-        """بررسی اعتبار یک کانفیگ Juicity."""
-        try:
-            if not config.startswith('juicity://'):
-                return False
-            parsed = urlparse(config)
-            # باید شامل netloc (host:port), username (UUID) و پارامتر password باشد
-            return bool(parsed.netloc and parsed.username and parsed.port and 'password=' in parsed.query) 
-        except Exception:
-            return False
-
-    @staticmethod
-    def is_warp_config(config: str) -> bool:
-        """بررسی اعتبار یک کانفیگ WARP."""
-        try:
-            if not config.startswith('warp://'):
-                return False
-            # برای WARP، فقط شروع با پروتکل کافی است (ساختار داخلی پیچیده است)
-            return True 
-        except Exception:
-            return False
-            
-    @staticmethod
-    def is_wireguard_config(config: str) -> bool:
-        """بررسی اعتبار یک کانفیگ WireGuard."""
-        try:
-            if not config.startswith('wireguard://'):
-                return False
-            parsed = urlparse(config)
-            # WireGuard معمولاً شامل یک کلید عمومی در username و یک endpoint است
-            return bool(parsed.username and parsed.query and 'endpoint=' in parsed.query)
-        except Exception:
-            return False
-
-
-    @staticmethod
-    def convert_ssconf_to_https(url: str) -> str:
-        """تبدیل 'ssconf://' URL به 'https://'."""
-        if url.startswith('ssconf://'):
-            return url.replace('ssconf://', 'https://', 1)
-        return url
-
-    @staticmethod
-    def is_base64_config(config: str) -> Tuple[bool, str]:
-        """بررسی می‌کند که آیا یک کانفیگ با Base64 کدگذاری شده است و نوع پروتکل آن را برمی‌گرداند."""
-        protocols = ['vmess://', 'vless://', 'ss://', 'tuic://', 'ssr://']
-        for protocol in protocols:
-            if config.startswith(protocol):
-                base64_part = config[len(protocol):]
-                # unquote برای مدیریت encode شده‌های URL در Base64
-                decoded_url = unquote(base64_part) 
-                if (ConfigValidator.is_base64(decoded_url) or 
-                    ConfigValidator.is_base64(base64_part)):
-                    return True, protocol[:-3] # برگرداندن نام پروتکل بدون ://
-        return False, ''
-
-    @staticmethod
-    def check_base64_content(text: str) -> Optional[str]:
-        """بررسی می‌کند که آیا یک متن Base64 است و اگر دیکد شد، شامل پروتکل‌های پراکسی است یا خیر."""
-        try:
-            decoded_text = ConfigValidator.decode_base64_text(text)
-            if decoded_text:
-                protocols = ['vmess://', 'vless://', 'ss://', 'trojan://', 'hysteria2://', 'hy2://', 'wireguard://', 'tuic://', 'ssconf://',
-                             'ssr://', 'mieru://', 'snell://', 'anytls://', 'ssh://', 'juicity://',
-                             'hysteria://', 'warp://']
-                for protocol in protocols:
-                    if protocol in decoded_text:
-                        return decoded_text # اگر حاوی پروتکل بود، متن دیکد شده را برگردان
-            return None
-        except Exception:
-            return None
-
-    @staticmethod
-    def split_configs(text: str) -> List[str]:
-        """جداسازی چندین کانفیگ پراکسی از یک متن بزرگ."""
-        configs = []
-        lines = text.split('\n')
-
-        protocols = ['vmess://', 'vless://', 'ss://', 'trojan://', 'hysteria2://', 'hy2://', 'wireguard://', 'tuic://', 'ssconf://',
-                     'ssr://', 'mieru://', 'snell://', 'anytls://', 'ssh://', 'juicity://',
-                     'hysteria://', 'warp://']
+        self.config = config
+        self.validator = validator
+        self.get_location = get_location_func 
         
-        protocol_pattern = '|'.join(re.escape(p) for p in protocols)
-        matches = list(re.finditer(f"({protocol_pattern})", text))
+        self.mihomo_testable_protocols = {
+            "vmess://", "vless://", "trojan://", "ss://", "hysteria2://", "hysteria://", "tuic://", "juicity://",
+        }
+        logger.info("ConnectionTester با موفقیت مقداردهی اولیه شد.")
 
-        if not matches:
-            decoded_content_if_base64 = ConfigValidator.check_base64_content(text)
-            if decoded_content_if_base64:
-                return ConfigValidator.split_configs(decoded_content_if_base64)
-            return [] 
-
-        for i, match in enumerate(matches):
-            start = match.start()
-            end = matches[i+1].start() if i + 1 < len(matches) else len(text)
-            
-            config_candidate = text[start:end].strip()
-
-            if config_candidate.startswith("vmess://"):
-                config_candidate = ConfigValidator.clean_vmess_config(config_candidate)
-            elif config_candidate.startswith("hy2://"):
-                config_candidate = ConfigValidator.normalize_hysteria2_protocol(config_candidate)
-            elif config_candidate.startswith("ssr://"):
-                config_candidate = ConfigValidator.clean_ssr_config(config_candidate)
-            elif config_candidate.startswith("hy1://"):
-                config_candidate = config_candidate.replace('hy1://', 'hysteria://', 1) 
-            
-            clean_config = ConfigValidator.clean_config(config_candidate)
-            
-            if ConfigValidator.is_valid_config(clean_config): 
-                configs.append(clean_config)
-
-        return configs
-
-
-    @staticmethod
-    def clean_config(config: str) -> str:
-        """پاکسازی یک رشته کانفیگ از کاراکترهای نامرئی، ایموجی‌ها و فضاهای اضافی."""
-        config = re.sub(r'[\U0001F300-\U0001F9FF\U00002600-\U000027BF]', '', config, flags=re.UNICODE)
-        config = re.sub(r'[\x00-\x08\x0B-\x1F\x7F-\x9F]', '', config)
-        config = re.sub(r'[^\S\r\n]+', ' ', config)
-        config = config.strip()
-        return config
-
-    @staticmethod
-    def is_valid_config(config: str) -> bool:
-        """بررسی اعتبار اولیه یک کانفیگ (شروع با پروتکل شناخته شده)."""
-        if not config:
+    def _ping_test(self, address: str, port: int, timeout: int = 5) -> bool:
+        """
+        تست پینگ سبک و سریع با بررسی باز بودن پورت TCP.
+        از سوکت برای تلاش برای اتصال به IP:Port استفاده می‌کند.
+        """
+        if not address or not port:
+            logger.debug(f"آدرس یا پورت برای تست پینگ نامعتبر است: {address}:{port}")
+            return False
+        try:
+            ip = socket.gethostbyname(address)
+            with socket.create_connection((ip, port), timeout=timeout) as sock:
+                logger.debug(f"تست پینگ موفق برای {address}:{port} (IP: {ip}).")
+                return True
+        except (socket.gaierror, socket.timeout, ConnectionRefusedError, OSError) as e:
+            logger.debug(f"تست پینگ ناموفق برای {address}:{port}: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"خطای ناشناخته در تست پینگ برای {address}:{port}: {e}")
             return False
 
-        protocols = ['vmess://', 'vless://', 'ss://', 'trojan://', 'hysteria2://', 'hy2://', 'wireguard://', 'tuic://', 'ssconf://',
-                     'ssr://', 'mieru://', 'snell://', 'anytls://', 'ssh://', 'juicity://',
-                     'hysteria://', 'warp://']
-        return any(config.startswith(p) for p in protocols)
-
-    @classmethod
-    def validate_protocol_config(cls, config: str, protocol: str) -> bool:
-        """اعتبارسنجی پروتکل خاص یک کانفیگ."""
-        try:
-            if protocol == 'hy2://':
-                protocol = 'hysteria2://'
-            elif protocol == 'hy1://':
-                protocol = 'hysteria://'
-
-            if protocol == 'vmess://':
-                return cls.is_vmess_config(config)
-            elif protocol == 'tuic://':
-                return cls.is_tuic_config(config)
-            elif protocol == 'ssr://':
-                return cls.is_ssr_config(config)
-            elif protocol == 'mieru://':
-                return cls.is_mieru_config(config)
-            elif protocol == 'snell://':
-                return cls.is_snell_config(config)
-            elif protocol == 'anytls://':
-                return cls.is_anytls_config(config)
-            elif protocol == 'ssh://':
-                return cls.is_ssh_config(config)
-            elif protocol == 'juicity://':
-                return cls.is_juicity_config(config)
-            elif protocol == 'hysteria://':
-                return cls.is_hysteria_config(config)
-            elif protocol == 'warp://':
-                return cls.is_warp_config(config)
-            elif protocol == 'wireguard://':
-                return cls.is_wireguard_config(config)
-            elif protocol in ['vless://', 'trojan://', 'hysteria2://']:
-                parsed = urlparse(config)
-                return bool(parsed.netloc and parsed.port)
-            elif protocol == 'ss://':
-                parts = config.replace('ss://', '').split('@')
-                if len(parts) == 2:
-                    try:
-                        base64.b64decode(parts[0].replace('-', '+').replace('_', '/')).decode('utf-8')
-                        server_part = parts[1].split('#')[0]
-                        return ':' in server_part and server_part.split(':')[0] and server_part.split(':')[1].isdigit()
-                    except:
-                        pass
+    def _wait_for_port(self, host: str, port: int, timeout: int = 10, interval: float = 0.5) -> bool:
+        """
+        منتظر می‌ماند تا یک پورت خاص روی یک هاست باز شود.
+        """
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                with socket.create_connection((host, port), timeout=1) as s:
+                    return True
+            except (socket.timeout, ConnectionRefusedError, OSError):
+                time.sleep(interval)
+            except Exception as e:
+                logger.debug(f"خطا در انتظار برای پورت {host}:{port}: {e}")
                 return False
-            elif protocol == 'ssconf://':
-                return True 
+        logger.debug(f"پورت {host}:{port} پس از {timeout} ثانیه باز نشد.")
+        return False
+
+    def _test_with_mihomo(self, config_string: str) -> bool:
+        """
+        تست عملکردی یک کانفیگ با استفاده از Mihomo CLI.
+        کانفیگ موقت ایجاد کرده، Mihomo را اجرا و لاگ‌ها را برای موفقیت بررسی می‌کند.
+        """
+        logger.debug(f"شروع تست Mihomo برای کانفیگ: {config_string[:min(len(config_string), 50)]}...")
+        
+        mihomo_config_content = {
+            "port": 7890, 
+            "log-level": "info", 
+            "mode": "rule",
+            "proxies": [
+                {
+                    "name": "test-proxy",
+                    "type": "external",
+                    "url": config_string
+                }
+            ],
+            "proxy-groups": [
+                {
+                    "name": "proxy",
+                    "type": "select",
+                    "proxies": ["test-proxy"]
+                }
+            ],
+            "rules": [
+                "MATCH,proxy" 
+            ]
+        }
+
+        temp_config_file_path = None
+        process = None 
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.yaml', encoding='utf-8') as temp_config_file:
+                json.dump(mihomo_config_content, temp_config_file, indent=2) 
+                temp_config_file_path = temp_config_file.name
+            
+            mihomo_command = [
+                "mihomo", 
+                "-f", temp_config_file_path, 
+                "-d", tempfile.gettempdir(), 
+            ]
+
+            process = subprocess.Popen(mihomo_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, preexec_fn=os.setsid)
+            
+            if not self._wait_for_port("127.0.0.1", 7890, timeout=10): 
+                logger.warning(f"پورت Mihomo باز نشد. تست Mihomo ناموفق برای کانفیگ: {config_string[:min(len(config_string), 50)]}...")
+                return False
+
+            test_proxy_url = "http://127.0.0.1:7890" 
+            test_target_url = "http://cp.cloudflare.com/"
+            
+            try:
+                test_response = requests.get(test_target_url, proxies={"http": test_proxy_url, "https": test_proxy_url}, timeout=self.config.REQUEST_TIMEOUT / 2)
+                
+                if test_response.status_code == 200:
+                    logger.debug(f"تست Mihomo موفق برای کانفیگ: {config_string[:min(len(config_string), 50)]}...")
+                    return True
+                else:
+                    logger.debug(f"تست Mihomo ناموفق برای کانفیگ (کد وضعیت: {test_response.status_code}): {config_string[:min(len(config_string), 50)]}...")
+                    return False
+            except requests.exceptions.RequestException as e:
+                logger.debug(f"خطا در درخواست از طریق Mihomo برای کانفیگ '{config_string[:min(len(config_string), 50)]}...': {e}")
+                return False
+        except FileNotFoundError:
+            logger.error("اجرایی Mihomo یافت نشد. لطفاً مطمئن شوید که Mihomo در PATH سیستم شما نصب و قابل دسترس است.")
             return False
         except Exception as e:
-            logger.debug(f"خطا در اعتبارسنجی پروتکل '{protocol}' برای کانفیگ '{config[:min(len(config), 50)]}...': {str(e)}")
+            logger.error(f"خطا در اجرای تست Mihomo برای کانفیگ '{config_string[:min(len(config_string), 50)]}...': {e}", exc_info=True)
             return False
+        finally:
+            if process:
+                stdout, stderr = process.communicate(timeout=5) 
+                if stdout:
+                    logger.debug(f"Mihomo stdout: {stdout}")
+                if stderr:
+                    logger.debug(f"Mihomo stderr: {stderr}")
 
-    @staticmethod
-    def extract_telegram_channels_from_config(config_string: str) -> List[str]:
-        """کانال‌های تلگرام را از داخل مشخصات یک کانفیگ (مانند تگ‌ها یا پارامترهای خاص) استخراج می‌کند."""
-        found_channels = set()
+                if process.poll() is None: 
+                    try:
+                        os.killpg(os.getpgid(process.pid), 9) 
+                        process.wait(timeout=1) 
+                    except OSError as e:
+                        logger.debug(f"خطا در kill کردن فرآیند Mihomo: {e}")
+            
+            if temp_config_file_path and os.path.exists(temp_config_file_path):
+                os.remove(temp_config_file_path)
 
-        telegram_url_pattern = r"(?:https?://)?t\.me/(?:s/)?([a-zA-Z0-9_]+)"
+        return False
 
-        try: 
-            parsed_url = urlparse(config_string)
-
-            if parsed_url.fragment:
-                matches = re.findall(telegram_url_pattern, unquote(parsed_url.fragment))
-                for match in matches:
-                    found_channels.add(f"https://t.me/s/{match}")
-
-            if parsed_url.query:
-                query_params = parse_qs(parsed_url.query)
-                for key, values in query_params.items():
-                    for value in values:
-                        matches = re.findall(telegram_url_pattern, unquote(value))
-                        for match in matches:
-                            found_channels.add(f"https://t.me/s/{match}")
-
-            if config_string.startswith('vmess://'):
-                try:
-                    base64_part = config_string[len('vmess://'):]
-                    decoded_vmess = ConfigValidator.decode_base64_url(base64_part)
-                    if decoded_vmess:
-                        vmess_data = json.loads(decoded_vmess.decode('utf-8'))
-                        potential_fields = [vmess_data.get('ps'), vmess_data.get('id')] 
-                        for field_value in potential_fields:
-                            if isinstance(field_value, str):
-                                matches = re.findall(telegram_url_pattern, field_value)
-                                for match in matches:
-                                    found_channels.add(f"https://t.me/s/{match}")
-                except Exception:
-                    pass
-            elif config_string.startswith('ssr://'):
-                try:
-                    base64_part = config_string[len('ssr://'):].split('/?')[0].split('#')[0]
-                    decoded_ssr = ConfigValidator.decode_base64_url(base64_part)
-                    if decoded_ssr:
-                        full_ssr_params = decoded_ssr.decode('utf-8', errors='ignore')
-
-                        ssr_fragment_match = re.search(r'#(.+)', config_string)
-                        if ssr_fragment_match:
-                            remark_base64 = ssr_fragment_match.group(1)
-                            decoded_remark = ConfigValidator.decode_base64_url(remark_base64)
-                            if decoded_remark:
-                                matches = re.findall(telegram_url_pattern, decoded_remark.decode('utf-8', errors='ignore'))
-                                for match in matches:
-                                    found_channels.add(f"https://t.me/s/{match}")
-
-                        matches = re.findall(telegram_url_pattern, full_ssr_params)
-                        for match in matches:
-                            found_channels.add(f"https://t.me/s/{match}")
-
-                except Exception:
-                    pass
-            elif config_string.startswith('hysteria://') or config_string.startswith('hysteria2://'):
-                try:
-                    parsed_hy = urlparse(config_string)
-                    if parsed_hy.fragment:
-                        matches = re.findall(telegram_url_pattern, unquote(parsed_hy.fragment))
-                        for match in matches:
-                            found_channels.add(f"https://t.me/s/{match}")
-                    query_params = parse_qs(parsed_hy.query)
-                    if 'password' in query_params: 
-                        matches = re.findall(telegram_url_pattern, query_params['password'][0])
-                        for match in matches:
-                            found_channels.add(f"https://t.me/s/{match}")
-                except Exception:
-                    pass
-
-            matches = re.findall(telegram_url_pattern, config_string)
-            for match in matches:
-                found_channels.add(f"https://t.me/s/{match}")
-        except ValueError as e:
-            logger.debug(f"خطا در تجزیه URL کانفیگ برای استخراج کانال تلگرام: '{config_string[:min(len(config_string), 50)]}...' - {str(e)}")
-        except Exception as e:
-            logger.debug(f"خطای ناشناخته در استخراج کانال تلگرام از کانفیگ: '{config_string[:min(len(config_string), 50)]}...' - {str(e)}")
-
-
-        return list(found_channels)
-
-    @staticmethod
-    def get_server_address(config_string: str, protocol_prefix: str) -> Optional[str]:
+    def test_and_enrich_config(self, config_data: Dict[str, str]) -> Optional[Dict[str, str]]:
         """
-        استخراج آدرس سرور (هاست‌نام یا IP) از یک رشته کانفیگ با توجه به پروتکل آن.
+        کانفیگ را تست می‌کند و در صورت فعال بودن، اطلاعات پرچم و کشور را اضافه می‌کند.
+        این متد برای استفاده موازی طراحی شده است.
+        config_data: دیکشنری حاوی 'config', 'protocol', 'canonical_id'.
         """
+        config_string = config_data['config']
+        protocol = config_data['protocol']
+        
+        server_address = self.validator.get_server_address(config_string, protocol)
+        
+        port = None
         try:
-            if protocol_prefix == 'hy2://':
-                protocol_prefix = 'hysteria2://'
-            elif protocol_prefix == 'hy1://':
-                protocol_prefix = 'hysteria://'
-
             parsed_url = urlparse(config_string)
-
-            if protocol_prefix == 'vmess://':
-                decoded_data = base64.b64decode(config_string[len(protocol_prefix):]).decode('utf-8')
-                vmess_json = json.loads(decoded_data)
-                return vmess_json.get('add') 
-            elif protocol_prefix in ['vless://', 'trojan://', 'hysteria2://', 'tuic://', 'mieru://', 'snell://', 'anytls://', 'juicity://', 'hysteria://', 'ssh://']:
-                return parsed_url.hostname
-            elif protocol_prefix == 'ss://':
-                parts = config_string.replace('ss://', '').split('@')
-                if len(parts) == 2:
-                    server_part = parts[1].split('#')[0] 
-                    return server_part.split(':')[0] 
-            elif protocol_prefix == 'ssr://':
-                base64_part = config_string[len(protocol_prefix):].split('/?')[0].split('#')[0]
-                decoded_params = ConfigValidator.decode_base64_url(base64_part)
-                if decoded_params:
-                    return decoded_params.decode('utf-8', errors='ignore').split(':')[0]
+            port = parsed_url.port
+        except ValueError:
+            pass 
+        
+        if not port:
+            if protocol == "warp://":
+                port = 80 
+            
+        if not server_address: 
+            logger.debug(f"آدرس سرور برای کانفیگ '{config_string[:min(len(config_string), 50)]}...' یافت نشد. تست نادیده گرفته شد.")
+            return None
+        
+        if port and protocol not in ["warp://"]: 
+            if not self._ping_test(server_address, port):
+                logger.debug(f"کانفیگ '{config_string[:min(len(config_string), 50)]}...' تست پینگ/پورت را رد کرد. نادیده گرفته شد.")
                 return None
-            elif protocol_prefix == 'wireguard://':
-                endpoint_match = re.search(r'@([^/?#]+)', config_string)
-                if endpoint_match:
-                    endpoint = endpoint_match.group(1)
-                    return endpoint.split(':')[0] 
-            elif protocol_prefix == 'warp://':
-                if parsed_url.hostname:
-                    return parsed_url.hostname
-                return "162.159.192.1" 
-            elif protocol_prefix == 'ssconf://':
-                return None 
+        elif not port:
+            logger.debug(f"پورت برای کانفیگ '{config_string[:min(len(config_string), 50)]}...' یافت نشد. تست پینگ نادیده گرفته شد.")
 
-            return None
-        except Exception:
-            logger.debug(f"خطا در استخراج آدرس سرور برای کانفیگ '{config_string[:min(len(config_string), 50)]}...' با پروتکل '{protocol_prefix}'.", exc_info=True)
-            return None
 
-    @staticmethod
-    def get_canonical_parameters(config_string: str, protocol_prefix: str) -> Optional[Dict[str, Any]]:
-        """
-        استخراج پارامترهای "کانونی" (اصلی و عملکردی) یک کانفیگ برای شناسایی تکراری‌ها.
-        این تابع بخش‌های غیرعملکردی مانند remark/tag را نادیده می‌گیرد و خروجی را دقیقاً کنترل می‌کند.
-        """
-        try: 
-            if protocol_prefix == 'hy2://':
-                protocol_prefix = 'hysteria2://'
-            elif protocol_prefix == 'hy1://':
-                protocol_prefix = 'hysteria://'
-
-            parsed_url = urlparse(config_string)
-        except ValueError as e:
-            logger.debug(f"خطا در تجزیه URL برای دریافت پارامترهای کانونی: '{config_string[:50]}...' - {str(e)}", exc_info=True) 
-            return None
-        except Exception as e:
-            logger.debug(f"خطای ناشناخته در دریافت پارامترهای کانونی: '{config_string[:50]}...' - {str(e)}", exc_info=True) 
-            return None
-
-        canonical_params: Dict[str, Any] = {"protocol": protocol_prefix}
-
-        try:
-            if protocol_prefix == 'vmess://':
-                decoded_data = base64.b64decode(config_string[len(protocol_prefix):]).decode('utf-8')
-                vmess_json = json.loads(decoded_data)
-                canonical_params.update({
-                    'server': vmess_json.get('add', ''),
-                    'port': str(vmess_json.get('port', '')), 
-                    'uuid': vmess_json.get('id', ''),
-                    'security': vmess_json.get('scy', ''), 
-                    'net': vmess_json.get('net', ''),     
-                    'type': vmess_json.get('type', ''),   
-                    'host': vmess_json.get('host', ''),   
-                    'path': vmess_json.get('path', ''),
-                    'tls': 'tls' if vmess_json.get('tls') == 'tls' else '' 
-                })
-            elif protocol_prefix == 'vless://':
-                query_params_dict = parse_qs(parsed_url.query) 
-                canonical_params.update({
-                    'server': parsed_url.hostname or '',
-                    'port': str(parsed_url.port or ''),
-                    'uuid': parsed_url.username or '',
-                    'flow': query_params_dict.get('flow', [''])[0],
-                    'security': query_params_dict.get('security', [''])[0], 
-                    'sni': query_params_dict.get('sni', [parsed_url.hostname or ''])[0],
-                    'type': query_params_dict.get('type', [''])[0], 
-                    'host': query_params_dict.get('host', [''])[0],
-                    'path': query_params_dict.get('path', [''])[0],
-                    'encryption': query_params_dict.get('encryption', [''])[0] 
-                })
-            elif protocol_prefix == 'trojan://':
-                query_params_dict = parse_qs(parsed_url.query)
-                canonical_params.update({
-                    'server': parsed_url.hostname or '',
-                    'port': str(parsed_url.port or ''),
-                    'password': parsed_url.username or '', 
-                    'sni': query_params_dict.get('sni', [parsed_url.hostname or ''])[0],
-                    'alpn': query_params_dict.get('alpn', [''])[0],
-                    'type': query_params_dict.get('type', [''])[0],
-                    'path': query_params_dict.get('path', [''])[0],
-                    'host': query_params_dict.get('host', [''])[0]
-                })
-            elif protocol_prefix in ['hysteria2://', 'hysteria://']:
-                query_params_dict = parse_qs(parsed_url.query)
-                canonical_params.update({
-                    'server': parsed_url.hostname or '',
-                    'port': str(parsed_url.port or ''),
-                    'password': parsed_url.username or query_params_dict.get('auth', [''])[0] or query_params_dict.get('password', [''])[0],
-                    'sni': query_params_dict.get('sni', [parsed_url.hostname or ''])[0],
-                    'alpn': query_params_dict.get('alpn', [''])[0],
-                    'obfs': query_params_dict.get('obfs', [''])[0] 
-                })
-            elif protocol_prefix == 'ss://':
-                parts = config_string.replace('ss://', '').split('@')
-                if len(parts) == 2:
-                    method_pass_encoded = parts[0]
-                    decoded_method_pass = base64.b64decode(method_pass_encoded.replace('-', '+').replace('_', '/')).decode('utf-8', errors='ignore')
-                    method, password = (decoded_method_pass.split(':', 1) + [''])[:2] 
-                    server_port_part = parts[1].split('#')[0] 
-                    server, port = (server_port_part.split(':', 1) + [''])[:2]
-                    canonical_params.update({
-                        'server': server or '',
-                        'port': str(port or ''),
-                        'method': method or '',
-                        'password': password or ''
-                    })
-            elif protocol_prefix == 'ssr://':
-                base64_part = config_string[len(protocol_prefix):].split('/?')[0].split('#')[0] 
-                decoded_params_str = ConfigValidator.decode_base64_url(base64_part).decode('utf-8', errors='ignore')
-                ssr_parts = decoded_params_str.split(':')
-                if len(ssr_parts) >= 6:
-                    password_encoded = ssr_parts[5]
-                    password = base64.b64decode(password_encoded.replace('-', '+').replace('_', '/')).decode('utf-8', errors='ignore')
-                    canonical_params.update({
-                        'server': ssr_parts[0] or '',
-                        'port': str(ssr_parts[1] or ''),
-                        'protocol_type': ssr_parts[2] or '', 
-                        'method': ssr_parts[3] or '',
-                        'obfs': ssr_parts[4] or '', 
-                        'password': password or ''
-                    })
-            elif protocol_prefix == 'tuic://':
-                query_params_dict = parse_qs(parsed_url.query)
-                canonical_params.update({
-                    'server': parsed_url.hostname or '',
-                    'port': str(parsed_url.port or ''),
-                    'uuid': parsed_url.username or '', 
-                    'password': query_params_dict.get('password', [''])[0],
-                    'alpn': query_params_dict.get('alpn', [''])[0],
-                    'congestion_control': query_params_dict.get('congestion_control', [''])[0],
-                    'udp_relay_mode': query_params_dict.get('udp_relay_mode', [''])[0],
-                    'disable_sni': query_params_dict.get('disable_sni', [''])[0],
-                    'tls': 'tls' if parsed_url.scheme.endswith('+tls') else '' 
-                })
-            elif protocol_prefix == 'mieru://':
-                query_params_dict = parse_qs(parsed_url.query)
-                canonical_params.update({
-                    'uuid': parsed_url.username or '',
-                    'server': parsed_url.hostname or '',
-                    'port': str(parsed_url.port or ''),
-                    'tls': query_params_dict.get('tls', [''])[0],
-                    'udp_over_tcp': query_params_dict.get('udp_over_tcp', [''])[0],
-                    'peer_fingerprint': query_params_dict.get('peer_fingerprint', [''])[0],
-                    'server_name': query_params_dict.get('server_name', [''])[0],
-                })
-            elif protocol_prefix == 'snell://':
-                query_params_dict = parse_qs(parsed_url.query)
-                canonical_params.update({
-                    'server': parsed_url.hostname or '',
-                    'port': str(parsed_url.port or ''),
-                    'psk': query_params_dict.get('psk', [''])[0], 
-                    'version': query_params_dict.get('version', [''])[0],
-                    'obfs': query_params_dict.get('obfs', [''])[0], 
-                    'obfs_uri': query_params_dict.get('uri', [''])[0], 
-                    'tfo': query_params_dict.get('tfo', [''])[0] 
-                })
-            elif protocol_prefix == 'anytls://':
-                query_params_dict = parse_qs(parsed_url.query)
-                canonical_params.update({
-                    'protocol_type': parsed_url.username or '', 
-                    'server': parsed_url.hostname or '',
-                    'port': str(parsed_url.port or ''),
-                    'sni': query_params_dict.get('sni', [''])[0],
-                    'path': query_params_dict.get('path', [''])[0],
-                    'host': query_params_dict.get('host', [''])[0],
-                    'tls': query_params_dict.get('tls', [''])[0]
-                })
-            elif protocol_prefix == 'ssh://':
-                canonical_params.update({
-                    'user': parsed_url.username or '',
-                    'password': parsed_url.password or '',
-                    'server': parsed_url.hostname or '',
-                    'port': str(parsed_url.port or '')
-                })
-            elif protocol_prefix == 'juicity://':
-                query_params_dict = parse_qs(parsed_url.query)
-                canonical_params.update({
-                    'uuid': parsed_url.username or '',
-                    'server': parsed_url.hostname or '',
-                    'port': str(parsed_url.port or ''),
-                    'password': query_params_dict.get('password', [''])[0],
-                    'security': query_params_dict.get('security', [''])[0], 
-                    'fingerprint': query_params_dict.get('fingerprint', [''])[0],
-                    'congestion_control': query_params_dict.get('congestion_control', [''])[0],
-                    'alpn': query_params_dict.get('alpn', [''])[0]
-                })
-            elif protocol_prefix == 'wireguard://':
-                endpoint_match = re.search(r'@([^/?#]+)', config_string)
-                query_params_dict = parse_qs(parsed_url.query)
-                canonical_params.update({
-                    'public_key': parsed_url.username or '',
-                    'endpoint': (endpoint_match.group(1) if endpoint_match else ''),
-                    'private_key': query_params_dict.get('privatekey', [''])[0] 
-                })
-            elif protocol_prefix == 'warp://':
-                canonical_params.update({
-                    'server': parsed_url.hostname or '162.159.192.1', 
-                    'uuid': parsed_url.username or '' 
-                })
-            elif protocol_prefix == 'ssconf://':
-                return None 
-            else: 
-                logger.debug(f"پروتکل ناشناخته برای پارامترهای کانونی: '{protocol_prefix}'. کانفیگ: '{config_string[:min(len(config_string), 50)]}...'.")
+        if protocol in self.mihomo_testable_protocols:
+            if not self._test_with_mihomo(config_string):
+                logger.debug(f"کانفیگ '{config_string[:min(len(config_string), 50)]}...' تست Mihomo را رد کرد. نادیده گرفته شد.")
                 return None
+            logger.debug(f"کانفیگ '{config_string[:min(len(config_string), 50)]}...' تست Mihomo را با موفقیت پشت سر گذاشت.")
+        else:
+            logger.debug(f"پروتکل '{protocol}' توسط Mihomo تست نمی‌شود. از تست Mihomo صرف نظر شد و معتبر فرض شد.")
 
-            return canonical_params
-        except Exception as e: 
-            logger.debug(f"خطا در استخراج پارامترهای کانونی برای '{config_string[:min(len(config_string), 50)]}...': {str(e)}", exc_info=True)
-            return None
-
-    @staticmethod
-    def get_canonical_id(config_string: str, protocol_prefix: str) -> Optional[str]:
-        """
-        تولید یک رشته شناسه کانونی (Canonical ID) برای یک کانفیگ.
-        این شناسه برای شناسایی دقیق کانفیگ‌های تکراری استفاده می‌شود.
-        """
-        canonical_params = ConfigValidator.get_canonical_parameters(config_string, protocol_prefix)
-        if not canonical_params:
-            logger.debug(f"تولید شناسه کانونی برای پروتکل '{protocol_prefix}' ناموفق بود: پارامترها خالی هستند یا استخراج نشدند.")
-            return None
-
-        sorted_canonical_params = sorted(canonical_params.items())
-        canonical_id = json.dumps(sorted_canonical_params, sort_keys=True) 
-        return canonical_id
+        flag, country = self.get_location(server_address) 
+        
+        enriched_config = {
+            'config': config_string,
+            'protocol': protocol,
+            'flag': flag,
+            'country': country,
+            'canonical_id': config_data['canonical_id'] 
+        }
+        logger.debug(f"کانفیگ '{config_string[:min(len(config_string), 50)]}...' با موفقیت تست و غنی‌سازی شد.")
+        return enriched_config
 
