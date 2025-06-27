@@ -9,9 +9,9 @@ from typing import List, Dict, Optional, Tuple, Any
 from bs4 import BeautifulSoup
 import base64 
 
-# وابستگی‌های مورد نیاز برای SourceFetcher
-from config import ProxyConfig, ChannelConfig 
-from config_validator import ConfigValidator 
+# وارد کردن کلاس‌ها با مسیر پکیج 'src'
+from src.config import ProxyConfig, ChannelConfig 
+from src.config_validator import ConfigValidator 
 
 logger = logging.getLogger(__name__)
 
@@ -42,17 +42,16 @@ class SourceFetcher:
             try:
                 logger.debug(f"در حال تلاش برای واکشی '{url}' (تلاش {attempt + 1}/{self.config.MAX_RETRIES})")
                 response = self.session.get(url, timeout=self.config.REQUEST_TIMEOUT)
-                response.raise_for_status()  # خطا را برای کدهای وضعیت HTTP ناموفق بالا می‌اندازد
+                response.raise_for_status() 
                 return response
             except requests.RequestException as e:
                 if attempt == self.config.MAX_RETRIES - 1:
                     logger.error(f"واکشی '{url}' پس از {self.config.MAX_RETRIES} تلاش ناموفق بود: {str(e)}")
                     return None
-                # محاسبه زمان انتظار با تأخیر تصاعدی (exponential backoff)
-                wait_time = min(self.config.RETRY_DELAY * backoff, 60) # حداکثر 60 ثانیه
+                wait_time = min(self.config.RETRY_DELAY * backoff, 60) 
                 logger.warning(f"تلاش {attempt + 1} برای '{url}' ناموفق بود. تلاش مجدد در {wait_time} ثانیه: {str(e)}")
                 time.sleep(wait_time)
-                backoff *= 2  # افزایش فاکتور backoff
+                backoff *= 2  
 
         return None
 
@@ -67,7 +66,6 @@ class SourceFetcher:
         response = self.fetch_with_retry(https_url)
         if response and response.text.strip():
             text = response.text.strip()
-            # بررسی می‌کند که آیا محتوا Base64 است و دیکدش می‌کند
             decoded_text = self.check_and_decode_base64(text)
             if decoded_text:
                 logger.debug(f"محتوای ssconf از Base64 دیکد شد.")
@@ -89,8 +87,6 @@ class SourceFetcher:
         try:
             decoded_text = self.validator.decode_base64_text(text)
             if decoded_text:
-                # بررسی می‌کند که آیا متن دیکد شده شامل هر یک از پروتکل‌های پشتیبانی شده است
-                # برای این کار از لیست پروتکل‌های اصلی در config استفاده می‌کنیم
                 if any(p in decoded_text for p in self.config.SUPPORTED_PROTOCOLS):
                     logger.debug(f"متن با موفقیت به Base64 دیکد شد و شامل پروتکل‌های شناخته شده است.")
                     return decoded_text
@@ -105,14 +101,12 @@ class SourceFetcher:
         تاریخ و زمان انتشار پیام را از عنصر <time> در HTML پیام تلگرام استخراج می‌کند.
         """
         try:
-            # پیدا کردن عنصر <time> در والد پیام
             time_element = message.find_parent('div', class_='tgme_widget_message').find('time')
             if time_element and 'datetime' in time_element.attrs:
-                # تبدیل رشته datetime به شیء datetime با در نظر گرفتن منطقه زمانی
                 return datetime.fromisoformat(time_element['datetime'].replace('Z', '+00:00'))
         except Exception as e:
             logger.debug(f"خطا در استخراج تاریخ از پیام: {str(e)}")
-            pass # ادامه دادن در صورت بروز خطا
+            pass 
         return None
 
     def is_config_valid_by_date(self, config_text: str, date: Optional[datetime]) -> bool:
@@ -120,10 +114,8 @@ class SourceFetcher:
         بررسی می‌کند که آیا تاریخ کانفیگ به اندازه کافی جدید است (طبق MAX_CONFIG_AGE_DAYS).
         """
         if not date:
-            # اگر تاریخ موجود نیست، فرض می‌کنیم که معتبر است
             logger.debug("تاریخ کانفیگ موجود نیست، معتبر فرض می‌شود.")
             return True
-        # تاریخ برش (cutoff) را بر اساس حداکثر عمر کانفیگ‌ها محاسبه می‌کند
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=self.config.MAX_CONFIG_AGE_DAYS)
         if date >= cutoff_date:
             return True
@@ -143,12 +135,12 @@ class SourceFetcher:
             'url': channel.url,
             'success': False,
             'response_time': 0,
-            'valid_configs_count': 0, # تعداد کانفیگ‌های معتبر (بعد از پاکسازی) از این کانال
-            'total_configs_raw': 0,  # تعداد کل کانفیگ‌های خام پیدا شده
+            'valid_configs_count': 0, 
+            'total_configs_raw': 0, 
             'error_message': None 
         }
 
-        start_time = time.time() # شروع زمان‌سنجی واکشی
+        start_time = time.time() 
 
         try:
             if channel.url.startswith('ssconf://'):
@@ -162,11 +154,9 @@ class SourceFetcher:
 
                 if channel.is_telegram:
                     logger.debug(f"در حال تجزیه محتوای تلگرام برای کانال: '{channel.url}'.")
-                    # استفاده از BeautifulSoup برای تجزیه HTML پیام‌های تلگرام
                     soup = BeautifulSoup(response.text, 'html.parser')
                     messages = soup.find_all('div', class_='tgme_widget_message_text')
 
-                    # مرتب‌سازی پیام‌ها بر اساس تاریخ به صورت نزولی (جدیدترین اول)
                     sorted_messages = sorted(
                         messages,
                         key=lambda message: self.extract_date_from_message(message) or datetime.min.replace(tzinfo=timezone.utc),
@@ -178,11 +168,9 @@ class SourceFetcher:
                             continue
 
                         message_date = self.extract_date_from_message(message_div)
-                        # فیلتر کردن پیام‌ها بر اساس تاریخ (قدیمی بودن)
                         if not self.is_config_valid_by_date(message_div.text, message_date):
                             continue
 
-                        # استخراج لینک‌های کانال تلگرام از پیام
                         links_and_mentions = message_div.find_all('a', href=True)
                         for item in links_and_mentions:
                             href_url = item['href']
@@ -192,13 +180,10 @@ class SourceFetcher:
                             if match_s:
                                 new_channel_urls_from_channel.append(f"https://t.me/s/{match_s.group(1)}")
                             elif match_direct:
-                                # اطمینان از اینکه لینک‌های مستقیم نیز به فرمت t.me/s/ تبدیل شوند.
                                 new_channel_urls_from_channel.append(f"https://t.me/s/{match_direct.group(1)}")
 
-                            # استخراج کانفیگ‌ها از خود لینک‌ها (ممکن است لینک‌ها حاوی کانفیگ باشند)
                             raw_configs_from_channel.extend(self.validator.split_configs(href_url))
 
-                        # استخراج کانفیگ‌ها از محتوای متنی پیام
                         text_content = message_div.text
                         decoded_from_base64 = self.check_and_decode_base64(text_content)
                         if decoded_from_base64:
@@ -206,7 +191,7 @@ class SourceFetcher:
                         else:
                             raw_configs_from_channel.extend(self.validator.split_configs(text_content))
 
-                else: # برای کانال‌های غیرتلگرام (فقط محتوای متنی)
+                else: 
                     text_content = response.text
                     decoded_from_base64 = self.check_and_decode_base64(text_content)
                     if decoded_from_base64:
