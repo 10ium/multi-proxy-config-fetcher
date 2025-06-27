@@ -12,17 +12,17 @@ import concurrent.futures
 import threading
 from collections import defaultdict 
 
-# وارد کردن کلاس‌های ماژولار شده با مسیر پکیج 'src'
-from src.config import ProxyConfig, ChannelConfig
-from src.config_validator import ConfigValidator
-from src.source_fetcher import SourceFetcher 
-from src.config_processor import ConfigProcessor 
-from src.deduplicator import Deduplicator 
-from src.connection_tester import ConnectionTester 
-from src.output_manager import OutputManager 
-from src.config_filter import ConfigFilter 
-from src.user_settings import SOURCE_URLS, SPECIFIC_CONFIG_COUNT, BLOCKED_KEYWORDS, BLOCKED_IPS, BLOCKED_DOMAINS 
-from src.user_settings import ALLOWED_COUNTRIES, BLOCKED_COUNTRIES, ALLOWED_PROTOCOLS 
+# **تغییر یافته**: وارد کردن کلاس‌ها بدون پیشوند 'src.'
+from config import ProxyConfig, ChannelConfig
+from config_validator import ConfigValidator
+from source_fetcher import SourceFetcher 
+from config_processor import ConfigProcessor 
+from deduplicator import Deduplicator 
+from connection_tester import ConnectionTester 
+from output_manager import OutputManager 
+from config_filter import ConfigFilter 
+from user_settings import SOURCE_URLS, SPECIFIC_CONFIG_COUNT, BLOCKED_KEYWORDS, BLOCKED_IPS, BLOCKED_DOMAINS 
+from user_settings import ALLOWED_COUNTRIES, BLOCKED_COUNTRIES, ALLOWED_PROTOCOLS 
 
 # پیکربندی لاگ‌گیری (این پیکربندی در main.py انجام می‌شود)
 logger = logging.getLogger(__name__)
@@ -216,7 +216,7 @@ class ConfigFetcher:
                     self.config.SOURCE_URLS.append(new_channel_config)
                     logger.info(f"کانال تلگرام جدید به صورت پویا اضافه شد: '{new_channel_url}'.")
                 except ValueError as e:
-                    logger.warning(f"URL کانال تلگرام نامعتبر پیدا شد و نادیده گرفته شد: '{new_channel_url}' - {e}")
+                    logger.warning(f"URL کانال تلگرام نامعتبر پیدا شد و نadideh گرفته شد: '{new_channel_url}' - {e}")
 
 
     def _fetch_raw_data_for_channel(self, channel: ChannelConfig) -> Tuple[List[str], List[str], Dict[str, Any]]:
@@ -362,7 +362,7 @@ class ConfigFetcher:
         logger.info(f"در حال فیلتر کردن کانال‌ها برای پردازش. زمان فعلی: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}.")
         for channel in list(self.config.SOURCE_URLS):
             if not channel.enabled:
-                logger.debug(f"کانال '{channel.url}' غیرفعال است و نادیده گرفته شد.")
+                logger.debug(f"کانال '{channel.url}' غیرفعال است و نادideh گرفته شد.")
                 continue
             if channel.next_check_time and channel.next_check_time > now:
                 logger.info(f"کانال '{channel.url}' به دلیل تلاش مجدد هوشمند نادیده گرفته شد. زمان بررسی بعدی: {channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}.")
