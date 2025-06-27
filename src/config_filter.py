@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional, Union
 from urllib.parse import urlparse
 
 # **تغییر یافته**: وارد کردن کلاس‌ها بدون پیشوند 'src.'
+# (زیرا main.py مسیر src/ را به sys.path اضافه می‌کند)
 from config import ProxyConfig 
 from config_validator import ConfigValidator 
 
@@ -69,6 +70,14 @@ class ConfigFilter:
                       ) -> list[Dict[str, str]]: 
         """
         لیست کانفیگ‌ها را بر اساس معیارهای فیلترینگ مشخص شده فیلتر می‌کند.
+        
+        configs: لیستی از دیکشنری‌های کانفیگ، هر کدام شامل 'config', 'protocol', 'flag', 'country', 'canonical_id'.
+        allowed_countries: لیست کدهای کشور (ISO 3166-1 alpha-2، lowercase) که مجاز هستند.
+        blocked_countries: لیست کدهای کشور که مسدود هستند.
+        allowed_protocols: لیست پروتکل‌ها (با '://') که مجاز هستند.
+        blocked_keywords: لیستی از کلمات کلیدی که اگر در کانفیگ یا شناسه کانونی آن باشند، مسدود می‌شوند.
+        blocked_ips: لیستی از آدرس‌های IP یا رنج‌های CIDR که مسدود هستند.
+        blocked_domains: لیستی از دامنه‌ها که مسدود هستند.
         """
         filtered_list: list[Dict[str, str]] = [] 
         
