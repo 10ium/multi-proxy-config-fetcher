@@ -240,3 +240,4 @@ BLOCKED_IPS: list[str] = []
 # لیستی از دامنه‌ها (case-insensitive) که مسدود هستند.
 # مثال: BLOCKED_DOMAINS = ["example.com", "bad-server.xyz"]
 BLOCKED_DOMAINS: list[str] = [] 
+
