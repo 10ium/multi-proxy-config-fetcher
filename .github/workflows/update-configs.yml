@@ -44,72 +44,104 @@ jobs:
       # Installs necessary Python libraries from requirements.txt
       run: |
         python -m pip install --upgrade pip
-        pip install -r src/requirements.txt # مسیر requirements.txt در src/
+        # مسیر requirements.txt را به src/requirements.txt تغییر دهید
+        pip install -r src/requirements.txt
 
     - name: Install Mihomo (Clash Core)
       # **جدید**: دانلود و نصب Mihomo (که قبلا Clash/Clash Premium/Clash Meta نامیده می‌شد)
       # برای تست پروکسی‌ها استفاده می‌شود.
+      # این مثال برای معماری linux-amd64 است. برای معماری‌های دیگر (مثل ARM) باید URL را تغییر دهید.
       run: |
-        MIHOMO_VERSION="v1.18.5" 
+        MIHOMO_VERSION="v1.18.5" # نسخه دلخواه Mihomo را اینجا مشخص کنید
         MIHOMO_FILENAME="mihomo-linux-amd64-${MIHOMO_VERSION}"
         MIHOMO_URL="https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VERSION}/${MIHOMO_FILENAME}.gz"
         
         echo "Downloading Mihomo from: ${MIHOMO_URL}"
         curl -sL -o /tmp/${MIHOMO_FILENAME}.gz ${MIHOMO_URL}
+        
+        echo "Decompressing Mihomo..."
         gzip -d /tmp/${MIHOMO_FILENAME}.gz
+        
+        echo "Moving Mihomo to /usr/local/bin..."
         sudo mv /tmp/${MIHOMO_FILENAME} /usr/local/bin/mihomo
+        
+        echo "Making Mihomo executable..."
         sudo chmod +x /usr/local/bin/mihomo
+        
         echo "Verifying Mihomo installation:"
-        mihomo -v 
+        mihomo -v # برای بررسی نصب صحیح Mihomo
 
     - name: Create output directories
       # Creates the new structured output directories
+      # این دایرکتوری‌ها در root مخزن ایجاد می‌شوند، نه در src/
       run: |
         mkdir -p subs/text
         mkdir -p subs/base64
         mkdir -p subs/singbox
-        mkdir -p assets 
+        mkdir -p assets # For charts and reports
 
     - name: Run Proxy Fetcher Script
       # **تغییر یافته**: اجرای اسکریپت اصلی main.py با استفاده از 'python -m'
-      # خط export PYTHONPATH حذف شده است، زیرا مدیریت مسیر در main.py انجام می‌شود.
+      # 'main.py' خودش مسیر src/ را به sys.path اضافه می‌کند.
       run: |
         python -m src.main
       continue-on-error: true 
 
     - name: Convert configs to Singbox format (if still separate and in src/)
+      # این گام همچنان به main.py وابسته است که باید فایل‌ها را تولید کند.
       run: python src/ConfigToSingbox.py 
       continue-on-error: true
 
     - name: Update README timestamps and stats
+      # Updates timestamps in README files for cache busting and dynamic content
+      # فرض می‌کند فایل‌های README.md, README_FA.md, README_CN.md, README_RU.md
+      # در ریشه مخزن قرار دارند.
       run: |
         timestamp=$(date +%s)
+        
+        # Update English README
         sed -i "s/protocol_distribution_chart\.svg?v=[0-9]*/protocol_distribution_chart.svg?v=$timestamp/" README.md
         sed -i "s/performance_report\.html?v=[0-9]*/performance_report.html?v=$timestamp/" README.md
+        
+        # Update Persian README
         sed -i "s/protocol_distribution_chart\.svg?v=[0-9]*/protocol_distribution_chart.svg?v=$timestamp/" README_FA.md
         sed -i "s/performance_report\.html?v=[0-9]*/performance_report.html?v=$timestamp/" README_FA.md
+        
+        # Update Chinese README
         sed -i "s/protocol_distribution_chart\.svg?v=[0-9]*/protocol_distribution_chart.svg?v=$timestamp/" README_CN.md
         sed -i "s/performance_report\.html?v=[0-9]*/performance_report.html?v=$timestamp/" README_CN.md
+        
+        # Update Russian README
         sed -i "s/protocol_distribution_chart\.svg?v=[0-9]*/protocol_distribution_chart.svg?v=$timestamp/" README_RU.md
         sed -i "s/performance_report\.html?v=[0-9]*/performance_report.html?v=$timestamp/" README_RU.md
       continue-on-error: true
 
     - name: Setup Git user
+      # Configures Git user details for commits by the GitHub Actions bot
       run: |
         git config --global user.name 'github-actions[bot]'
         git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
     - name: Commit and push changes
+      # Adds, commits, and pushes the updated files to the repository
       run: |
+        # Add all generated config files from the new 'subs' directory structure
         git add subs/text/*.txt
         git add subs/base64/*.txt
-        git add subs/singbox/*.json 
-        git add subs/channel_stats.json 
-        git add assets/protocol_distribution_chart.svg
+        git add subs/singbox/*.json # اگر این فایل‌ها توسط ConfigToSingbox.py تولید می‌شوند
+        git add subs/channel_stats.json # Stats file is directly under 'subs'
+        
+        # Add generated chart and report assets
+        git add assets/protocol_distribution_chart.svg # نام جدید نمودار
         git add assets/performance_report.html
+        
+        # Add updated README files
         git add README.md
         git add README_FA.md
         git add README_CN.md
         git add README_RU.md
+        
+        # Commit changes if any exist, otherwise, print a message
         git commit -m "Update proxy configs, stats and reports" || echo "No changes to commit"
+        # Push committed changes to the repository's default branch
         git push
