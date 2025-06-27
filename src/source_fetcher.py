@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 import base64 
 
 # **تغییر یافته**: وارد کردن کلاس‌ها بدون پیشوند 'src.'
+# (زیرا main.py مسیر src/ را به sys.path اضافه می‌کند)
 from config import ProxyConfig, ChannelConfig 
 from config_validator import ConfigValidator 
 
