@@ -129,7 +129,7 @@ class ConfigFetcher:
             if response.status_code == 200:
                 data = response.json()
                 if data.get('country_code') and data.get('country_name'):
-                    return data['country_code'].lower(), data['country_name']
+                    return data['country_code'].lower(), data['country']
         except Exception as e:
             logger.debug(f"خطا در API ipdata.co برای IP {ip}: {str(e)}")
         return '', ''
@@ -216,7 +216,7 @@ class ConfigFetcher:
                     self.config.SOURCE_URLS.append(new_channel_config)
                     logger.info(f"کانال تلگرام جدید به صورت پویا اضافه شد: '{new_channel_url}'.")
                 except ValueError as e:
-                    logger.warning(f"URL کانال تلگرام نامعتبر پیدا شد و نadideh گرفته شد: '{new_channel_url}' - {e}")
+                    logger.warning(f"URL کانال تلگرام نامعتبر پیدا شد و نادیده گرفته شد: '{new_channel_url}' - {e}")
 
 
     def _fetch_raw_data_for_channel(self, channel: ChannelConfig) -> Tuple[List[str], List[str], Dict[str, Any]]:
@@ -362,7 +362,7 @@ class ConfigFetcher:
         logger.info(f"در حال فیلتر کردن کانال‌ها برای پردازش. زمان فعلی: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}.")
         for channel in list(self.config.SOURCE_URLS):
             if not channel.enabled:
-                logger.debug(f"کانال '{channel.url}' غیرفعال است و نادideh گرفته شد.")
+                logger.debug(f"کانال '{channel.url}' غیرفعال است و نادیده گرفته شد.")
                 continue
             if channel.next_check_time and channel.next_check_time > now:
                 logger.info(f"کانال '{channel.url}' به دلیل تلاش مجدد هوشمند نادیده گرفته شد. زمان بررسی بعدی: {channel.next_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}.")
