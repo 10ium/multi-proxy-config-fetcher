@@ -6,9 +6,10 @@ from dataclasses import dataclass
 import logging
 import os 
 
-# **تغییر یافته**: وارد کردن از user_settings با وارد کردن نسبی
-from .user_settings import SOURCE_URLS, USE_MAXIMUM_POWER, SPECIFIC_CONFIG_COUNT, ENABLED_PROTOCOLS, MAX_CONFIG_AGE_DAYS
+# **تغییر یافته**: وارد کردن از user_settings بدون پیشوند 'src.'
+from user_settings import SOURCE_URLS, USE_MAXIMUM_POWER, SPECIFIC_CONFIG_COUNT, ENABLED_PROTOCOLS, MAX_CONFIG_AGE_DAYS
 
+# پیکربندی لاگ‌گیری (این پیکربندی باید در main.py انجام شود و در اینجا فقط لاگر ایجاد می‌شود)
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -27,6 +28,7 @@ class ChannelMetrics:
     protocol_counts: Dict[str, int] = None # شمارش کانفیگ‌ها بر اساس پروتکل (در این کانال)
 
     def __post_init__(self):
+        # اطمینان از مقداردهی اولیه protocol_counts اگر None باشد.
         if self.protocol_counts is None:
             self.protocol_counts = {}
 
@@ -35,20 +37,24 @@ class ChannelConfig:
     کلاس ChannelConfig برای نگهداری پیکربندی و وضعیت یک کانال منبع خاص.
     """
     def __init__(self, url: str):
-        self.url = self._validate_url(url)
-        self.enabled = True
-        self.metrics = ChannelMetrics()
-        self.is_telegram = bool(re.match(r'^https://t\.me/s/', self.url))
-        self.error_count = 0
-        self.last_check_time = None
-        self.next_check_time: Optional[datetime] = None
-        self.retry_level: int = 0
-        logger.debug(f"شیء ChannelConfig برای URL: '{self.url}' ایجاد شد.")
+        self.url = self._validate_url(url) # اعتبارسنجی و ذخیره URL کانال
+        self.enabled = True                # وضعیت فعال/غیرفعال بودن کانال
+        self.metrics = ChannelMetrics()    # معیارهای عملکرد کانال
+        self.is_telegram = bool(re.match(r'^https://t\.me/s/', self.url)) # بررسی تلگرام بودن کانال
+        self.error_count = 0               # تعداد خطاهای متوالی (برای ردیابی)
+        self.last_check_time = None        # آخرین زمان بررسی کانال
+        self.next_check_time: Optional[datetime] = None # زمان بعدی که باید کانال بررسی شود (برای Smart Retry)
+        self.retry_level: int = 0         # سطح تلاش مجدد برای Smart Retry (0: عادی، 1: 3 روز، 2: 1 هفته و...)
+        logger.debug(f"شیء ChannelConfig برای URL: '{self.url}' ایجاد شد.") # لاگ DEBUG
 
     def _validate_url(self, url: str) -> str:
+        """
+        اعتبارسنجی فرمت URL و پروتکل آن.
+        """
         if not url or not isinstance(url, str):
             raise ValueError("URL نامعتبر است.")
         url = url.strip()
+        # اضافه کردن تمامی پیشوندهای پروتکل‌های پشتیبانی شده برای اعتبارسنجی اولیه URL
         valid_protocols_prefixes = (
             'http://', 'https://', 'ssconf://', 
             'ssr://', 'mieru://', 'snell://', 'anytls://', 'ssh://', 'juicity://',
@@ -60,16 +66,23 @@ class ChannelConfig:
         return url
 
     def calculate_overall_score(self):
+        """
+        محاسبه امتیاز کلی کانال بر اساس قابلیت اطمینان، کیفیت، منحصر به فرد بودن و زمان پاسخگویی.
+        """
         try:
             total_attempts = max(1, self.metrics.success_count + self.metrics.fail_count)
-            reliability_score = (self.metrics.success_count / total_attempts) * 35 
+            reliability_score = (self.metrics.success_count / total_attempts) * 35 # امتیاز قابلیت اطمینان (تا 35%)
 
             total_configs = max(1, self.metrics.total_configs)
-            quality_score = (self.metrics.valid_configs / total_configs) * 25 if total_configs > 0 else 0 
+            # valid_configs و unique_configs در حال حاضر در ChannelMetrics به طور دقیق بروز نمی‌شوند
+            # اینها نشان‌دهنده کانفیگ‌های *یافت شده اولیه* هستند، نه لزوما تست شده/فیلتر شده.
+            quality_score = (self.metrics.valid_configs / total_configs) * 25 if total_configs > 0 else 0 # امتیاز کیفیت (تا 25%)
 
-            uniqueness_score = (self.metrics.unique_configs / max(1, self.metrics.valid_configs)) * 25 if self.metrics.valid_configs > 0 else 0 
+            # uniqueness_score در حال حاضر به دلیل پیچیدگی ردیابی منبع کانفیگ نهایی به کانال، دقیق نیست.
+            # برای حفظ منطق، آن را بر اساس total_configs محاسبه می‌کنیم.
+            uniqueness_score = (self.metrics.unique_configs / max(1, self.metrics.valid_configs)) * 25 if self.metrics.valid_configs > 0 else 0 # امتیاز منحصر به فرد بودن (تا 25%)
 
-            response_score = 15 
+            response_score = 15 # امتیاز زمان پاسخگویی (تا 15%)
             if self.metrics.avg_response_time > 0:
                 response_score = max(0, min(15, 15 * (1 - (self.metrics.avg_response_time / 10))))
 
@@ -85,14 +98,15 @@ class ProxyConfig:
     """
     def __init__(self, initial_source_urls: List[str] = None):
         logger.info("در حال بارگذاری و پیکربندی ProxyConfig...")
-        self.use_maximum_power = USE_MAXIMUM_POWER           
-        self.specific_config_count = SPECIFIC_CONFIG_COUNT   
-        self.MAX_CONFIG_AGE_DAYS = MAX_CONFIG_AGE_DAYS       
+        self.use_maximum_power = USE_MAXIMUM_POWER           # آیا از حداکثر قدرت واکشی استفاده شود؟
+        self.specific_config_count = SPECIFIC_CONFIG_COUNT   # تعداد کانفیگ‌های مورد نیاز در صورت عدم استفاده از حداکثر قدرت
+        self.MAX_CONFIG_AGE_DAYS = MAX_CONFIG_AGE_DAYS       # حداکثر عمر کانفیگ‌های معتبر
 
         logger.info(f"حالت واکشی: {'حداکثر قدرت' if self.use_maximum_power else f'تعداد مشخص ({self.specific_config_count} کانفیگ)'}")
         logger.info(f"حداکثر عمر کانفیگ‌ها: {self.MAX_CONFIG_AGE_DAYS} روز.")
 
-        if initial_source_urls == None: 
+        # بارگذاری URLهای منبع اولیه از user_settings.py
+        if initial_source_urls is None: # <--- اینجا از 'is None' استفاده شده است
             initial_urls_list = SOURCE_URLS
             logger.info(f"URLهای منبع اولیه از 'user_settings.py' بارگذاری شدند. ({len(initial_urls_list)} URL)")
         else:
@@ -101,24 +115,29 @@ class ProxyConfig:
 
 
         initial_channel_configs = [ChannelConfig(url=url) for url in initial_urls_list]
+        # حذف URLهای تکراری از لیست اولیه کانال‌ها
         self.SOURCE_URLS = self._remove_duplicate_urls(initial_channel_configs) 
         logger.info(f"پس از حذف تکراری‌ها، {len(self.SOURCE_URLS)} کانال منحصر به فرد برای پردازش باقی ماند.")
 
-        self.SUPPORTED_PROTOCOLS = self._initialize_protocols() 
+        self.SUPPORTED_PROTOCOLS = self._initialize_protocols() # مقداردهی اولیه پروتکل‌های پشتیبانی شده
         logger.info(f"پروتکل‌های پشتیبانی شده اولیه شدند. ({len(self.SUPPORTED_PROTOCOLS)} پروتکل)")
         logger.debug(f"وضعیت فعال بودن پروتکل‌ها: {self._get_protocol_enablement_status()}")
 
-        self._initialize_settings()                             
-        self._set_smart_limits()                                
+        self._initialize_settings()                             # مقداردهی اولیه سایر تنظیمات
+        self._set_smart_limits()                                # تنظیم محدودیت‌های هوشمند
         logger.info("پیکربندی ProxyConfig با موفقیت انجام شد.")
 
     def _get_protocol_enablement_status(self) -> str:
+        """برای لاگ‌گیری، وضعیت فعال بودن پروتکل‌ها را برمی‌گرداند."""
         status = []
         for p, info in self.SUPPORTED_PROTOCOLS.items():
             status.append(f"{p.replace('://', '')}: {'فعال' if info['enabled'] else 'غیرفعال'}")
         return ", ".join(status)
 
     def _initialize_protocols(self) -> Dict:
+        """
+        تعریف تمامی پروتکل‌های پراکسی پشتیبانی شده به همراه اولویت و نام‌های مستعار.
+        """
         return {
             "wireguard://": {"priority": 1, "aliases": [], "enabled": ENABLED_PROTOCOLS.get("wireguard://", False), "min_configs": 0, "max_configs": 0, "flexible_max": False},
             "hysteria2://": {"priority": 2, "aliases": ["hy2://"], "enabled": ENABLED_PROTOCOLS.get("hysteria2://", False), "min_configs": 0, "max_configs": 0, "flexible_max": False},
