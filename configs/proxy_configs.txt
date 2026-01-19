@@ -24,7 +24,13 @@ vless://2fb8808b-b94c-42ea-9dd2-cd77d2efcc8d@chatgpt.com:443?path=%2FeyJqdW5rIjo
 
 vless://464940bf-a662-4372-84fd-c67f4dca5e8a@chatgpt.com:2087?path=%2FSaReOxTiKiZiR%3Fed%3D2048&security=tls&encryption=none&insecure=1&host=four-serv.emrooz11tir1404.ir&fp=chrome&type=ws&allowInsecure=1&sni=four-serv.emrooz11tir1404.ir#@Capoit
 
+vless://49459766-9949-446f-9e76-748df102da5b@chatgpt.com:2087?path=%2F&security=tls&encryption=none&insecure=1&host=www.dataduonet.com&type=httpupgrade&allowInsecure=1&sni=www.dataduonet.com#@Capoit
+
 vless://5948350a-2406-4543-9973-9697e105670f@chatgpt.com:443?path=%2Ftestttt&security=tls&alpn=h2%2Chttp%2F1.1&encryption=none&insecure=1&host=eybaba.chizmarket.com&fp=chrome&type=ws&allowInsecure=1#@Capoit
+
+vless://5948350a-2406-4543-9973-9697e105670f@chatgpt.com:443?path=%2Ftestttt&security=tls&alpn=h2%2Chttp%2F1.1&encryption=none&insecure=1&host=eybaba.chizmarket.com&fp=chrome&type=ws&allowInsecure=1&sni=eybaba.chizmarket.com#@Capoit
+
+vless://5d3ff4ad-86c2-4065-b134-479fd42377fa@chatgpt.com:443?path=%2F&security=tls&alpn=h2%2Chttp%2F1.1&encryption=none&insecure=0&host=chat.l-mirror.xyz&fp=chrome&type=ws&allowInsecure=0&sni=chat.l-mirror.xyz#@Capoit
 
 vless://714baa55-2d34-4ea8-8859-b4336181b4a4@helper2.kashkekambiz.com:2053?path=%2F&security=none&encryption=none&host=thomann.de&type=ws#%40free_netc
 
@@ -50,11 +56,17 @@ vless://8a07740f-b932-4372-a3a2-ed91f184cd33@25.129.197.138:2053?path=%2FeyJqdW5
 
 vless://8a07740f-b932-4372-a3a2-ed91f184cd33@25.129.199.205:2053?path=%2FeyJqdW5rIjoiNDBNWGY3Z0NPd0loZ2YiLCJwcm90b2NvbCI6InZsIiwibW9kZSI6InByb3h5aXAiLCJwYW5lbElQcyI6W119%3Fed%3D2560%26q%3DTelegram-XV2ry2-Telegram-XV2ry2-Telegram-XV2ry2-Telegram-XV2ry2-Telegram-XV2ry2-Telegram-XV2ry2-Telegram-XV2ry2-Telegram-XV2ry2&security=tls&encryption=none&host=khamenei.dpdns.org&fp=chrome&type=ws&sni=KhAmeneI.DPdNs.OrG#%40free_netc
 
+vless://a207569d-bf8f-43dd-81fd-2c847c7870c4@ams1.fromblancwithlove.com:8443?security=tls&alpn=h2&encryption=none&insecure=1&headerType=none&fp=chrome&type=tcp&allowInsecure=1&sni=ams1.fromblancwithlove.com#@Capoit
+
+vless://acea1e3d-f8e6-412f-be1a-6397bd99dfd9@ip.xqnetwork.ir:2087?path=%2FSiamak&security=tls&alpn=h2%2Chttp%2F1.1&encryption=none&insecure=1&host=Chat.fastlink.Blog&fp=chrome&type=ws&allowInsecure=1&sni=Chat.fastlink.Blog#@Capoit@Capoit
+
 vless://c720931c-f403-4d07-841f-cf2e56252226@i9club.freedomefortecme.com:600?security=&encryption=none&headerType=none&type=tcp#%40free_netc
 
 vless://c720931c-f403-4d07-841f-cf2e56252226@i9club.freedomefortecme.com:600?security=none&encryption=none&headerType=none&type=tcp#%40free_netc
 
 vless://d6f3fbfa-ee33-41ea-8bea-f21bef93f19e@213.176.126.201:23771?security=none&encryption=none&headerType=none&type=tcp#@Capoit
+
+vless://e265fc78-e269-46b2-9b6a-85f573dab3d5@uaegaming.gojustore.site:7035?path=%2F&security=none&encryption=none&host=filimo.com&type=ws#@Capoit
 
 vless://e28d3c04-3c60-4315-a46f-2ff41d21e66e@25.129.199.12:2052?mode=auto&path=%2F&security=none&encryption=none&host=www.speedtest.net.tax.gov.ir.aparat.com.a.3.jEy.dPdNs.org.&type=xhttp#%40free_netc
 
@@ -81,6 +93,8 @@ vmess://ewogICJ2IjogIjIiLAogICJwcyI6ICJmaWhzbWZxYiIsCiAgImFkZCI6ICJsb3MuY2Ruc2Vy
 vmess://eyJ0eXBlIjoiaHR0cCIsInBhdGgiOiJcLyIsIm5ldCI6InRjcCIsImlkIjoiODU5MWMxMGYtZDA1NC00NmJhLWIyMzctMzljZjc1OWQxMWEyIiwicG9ydCI6IjEwNzQ2IiwiaG9zdCI6InRlbGV3ZWJpb24uY29tIiwidGxzIjoibm9uZSIsInNjeSI6ImF1dG8iLCJwcyI6IiU0MFZwbmlveCIsImFkZCI6ImkuY2FmZXBsdXNnYW1pbmcuc2l0ZSJ9
 
 vmess://eyJhZGQiOiAiY0ROLTMuR3hOZVQuY0FtIiwgImFpZCI6ICIwIiwgImlkIjogImEwMDNlODc2LWM1ODktNGExNi05YzEzLTM0M2QyZTVhMTVkOCIsICJuZXQiOiAidGNwIiwgInBvcnQiOiA0OTUxLCAicHMiOiAiXHVkODNjXHVkZGU5XHVkODNjXHVkZGVhIHwgR2VybWFueSB8IFx1ZDgzZFx1ZGVhNyBVc2VyIDogcnhzdXBwb3J0XzEwOCBbIFx1ZDgzY1x1ZGZhYiAxWCBdIiwgInNjeSI6ICJhdXRvIiwgInR5cGUiOiAibm9uZSIsICJ2IjogIjIifQ==
+
+vmess://eyJhZGQiOiAiY2hhdGdwdC5jb20iLCAiYWlkIjogIjAiLCAiZnAiOiAiIiwgImhvc3QiOiAiIiwgImlkIjogImExYWRkMjU3LWZlOTQtNDc2OC1hMzU5LTVjNjgwZWNiYTI0MSIsICJuZXQiOiAid3MiLCAicGF0aCI6ICIvIiwgInBvcnQiOiAyMDUzLCAicHMiOiAiVmlwIGNvbmZpZyAoM21GeWkxKSIsICJzY3kiOiAiYXV0byIsICJzbmkiOiAiZGw0LkZpbmVyb2FzdGluZ2NvLmNvbSIsICJ0bHMiOiAidGxzIiwgInR5cGUiOiAiIiwgInYiOiAiMiJ9
 
 vmess://eyJhZGQiOiI4LjIxOC4yMzguMjU0IiwiYWlkIjoiMCIsImFscG4iOiIiLCJmcCI6IiIsImhvc3QiOiIiLCJpZCI6IjVkNTY0MDU1LTJiNDItNDA2Yi05MTgzLTI4Y2M2M2Q4OTE0YSIsImluc2VjdXJlIjoiMCIsIm5ldCI6InRjcCIsInBhdGgiOiIveCIsInBvcnQiOiI0NjUyNCIsInBzIjoiIiwic2N5IjoiYXV0byIsInNuaSI6IiIsInRscyI6IiIsInR5cGUiOiJodHRwIiwidiI6IjIifQ==
 
@@ -127,6 +141,8 @@ vmess://eyJhZGQiOiJjRE4tMy5HeE5lVC5jQW0iLCJhaWQiOiIwIiwiYWxwbiI6IiIsImZwIjoiIiwi
 vmess://eyJhZGQiOiJjRE4tMy5HeE5lVC5jQW0iLCJhaWQiOiIwIiwiYWxwbiI6IiIsImZwIjoiIiwiaG9zdCI6IiIsImlkIjoiY2YyZGFkYzAtODUzMi00Njg2LWE2ZTAtMDEyZjc2YmUzZTFlIiwibmV0IjoidGNwIiwicGF0aCI6IiIsInBvcnQiOiI0OTUxIiwicHMiOiLimpzvuI9UZWxlZ3JhbTpAWWFtWWFtUHJveHkiLCJzY3kiOiJhdXRvIiwic25pIjoiIiwidGxzIjoiIiwidHlwZSI6Im5vbmUiLCJ2IjoiMiJ9
 
 vmess://eyJhZGQiOiJjRE4tMy5HeE5lVC5jQW0iLCJhaWQiOiIwIiwiYWxwbiI6IiIsImZwIjoiIiwiaG9zdCI6IiIsImlkIjoiY2YyZGFkYzAtODUzMi00Njg2LWE2ZTAtMDEyZjc2YmUzZTFlIiwibmV0IjoidGNwIiwicGF0aCI6IiIsInBvcnQiOiIzMDAxIiwicHMiOiLimpzvuI9UZWxlZ3JhbTpAWWFtWWFtUHJveHkiLCJzY3kiOiJhdXRvIiwic25pIjoiIiwidGxzIjoiIiwidHlwZSI6Im5vbmUiLCJ2IjoiMiJ9
+
+vmess://eyJhZGQiOiJjaGF0Z3B0LmNvbSIsImFpZCI6IjAiLCJhbHBuIjoiIiwiZnAiOiIiLCJob3N0IjoiIiwiaWQiOiJhMWFkZDI1Ny1mZTk0LTQ3NjgtYTM1OS01YzY4MGVjYmEyNDEiLCJuZXQiOiJ3cyIsInBhdGgiOiIvIiwicG9ydCI6IjIwNTMiLCJwcyI6IkBDYXBvaXQiLCJzY3kiOiJhdXRvIiwic25pIjoiZGw0LkZpbmVyb2FzdGluZ2NvLmNvbSIsInRscyI6InRscyIsInR5cGUiOiItLS0iLCJ2IjoiMiJ9
 
 vmess://eyJhZGQiOiJjaGF0Z3B0LmNvbSIsImFpZCI6IjAiLCJhbHBuIjoiIiwiZnAiOiIiLCJob3N0IjoiIiwiaWQiOiJkMTU2ZjkwNS0yZDE0LTQ0NGEtYWQ4OC02YzBmY2Q1YTU2OWUiLCJpbnNlY3VyZSI6IjAiLCJuZXQiOiJ3cyIsInBhdGgiOiIvIiwicG9ydCI6IjQ0MyIsInBzIjoiQFB1bHNlU3RvcmVfaXIiLCJzY3kiOiJhdXRvIiwic25pIjoiZGw0bW92aXMuaXIiLCJ0bHMiOiJ0bHMiLCJ0eXBlIjoiLS0tIiwidiI6IjIifQ==
 
