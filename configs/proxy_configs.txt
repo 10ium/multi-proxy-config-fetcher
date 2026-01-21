@@ -62,9 +62,15 @@ vless://ea3f180c-8141-4e03-b11c-4d542767a417@chatgpt.com:443?path=%2FeyJqdW5rIjo
 
 trojan://87d1bfd4-574e-4c96-ad42-0426f27461ff@104.18.32.47:443?path=%2F&security=tls&insecure=0&fp=chrome&type=ws&allowInsecure=0&sni=_acme-challenge.2go.cloudns.be#✅@AR14N24b
 
+trojan://87d1bfd4-574e-4c96-ad42-0426f27461ff@104.18.32.47:443?path=%2F&security=tls&insecure=0&fp=chrome&type=ws&allowInsecure=0&sni=_acme-challenge.2go.cloudns.be#✅@AR14N24b🤖بهترین راهکار رفع مشکل اتصال به پروکسی/فیلترشکن 🧠#کانفیگ #proxy #v2ray #اینترنت #پروکسی_رایگانکانال رو معرفی و شیر کنین@AR14N24b
+
 trojan://humanity@chatgpt.com:443?path=%2Fassignment&security=tls&insecure=0&host=www.gossipglove.com&fp=chrome&type=ws&allowInsecure=0&sni=www.gossipglove.com#✅@AR14N24b
 
+trojan://tunnel-freepersianet@tr-1.stunnel.cc:8441?security=tls&sni=creativecommons.org&alpn=http%2F1.1&allowInsecure=1&type=tcp&headerType=none&host=tr-1.stunnel.cc#✅@AR14N24b
+
 ss://Y2hhY2hhMjAtcG9seTEzMDU6NmUzZTQzZjQtMTJiNy00MmYxLThiOTMtNDFhMTUyZDU2MTJk@78.38.246.150:8446#%40free_netc
+
+vmess://ew0KICAidiI6ICIyIiwNCiAgInBzIjogIltWbWVzc10gdHVubmVsLWZyZWVwZXJzaWFuZXQiLA0KICAiYWRkIjogInRyLTEuc3R1bm5lbC5jYyIsDQogICJwb3J0IjogIjg0NDMiLA0KICAiaWQiOiAiMzEzMDMwMjAtMzUzNS00MDM1LWI0MjAtMzEzMDMyMjAzNTM1IiwNCiAgImFpZCI6ICIxNiIsDQogICJzY3kiOiAibm9uZSIsDQogICJuZXQiOiAid3MiLA0KICAidHlwZSI6ICJub25lIiwNCiAgImhvc3QiOiAidHItMS5zdHVubmVsLmNjIiwNCiAgInBhdGgiOiAiL3dzIiwNCiAgInRscyI6ICJ0bHMiLA0KICAic25pIjogImNyZWF0aXZlY29tbW9ucy5vcmciLA0KICAiYWxwbiI6ICIiDQp9
 
 vmess://ewogICJ2IjogIjIiLAogICJwcyI6ICIwMDE4LW05ZWJtcHUxIiwKICAiYWRkIjogImk5LnNwZWVkdGVzdDIwMjUuY29tIiwKICAicG9ydCI6IDk4NTMsCiAgImlkIjogImQ1MzljZGMwLTQ0YWQtNDhiYS05ODYyLTQ4YjNhZmYyYjUwYyIsCiAgInNjeSI6ICJhdXRvIiwKICAibmV0IjogInRjcCIsCiAgInRscyI6ICJub25lIiwKICAidHlwZSI6ICJub25lIgp9
 
@@ -81,4 +87,6 @@ vmess://eyJhZGQiOiJjaGF0Z3B0LmNvbSIsImFpZCI6IjAiLCJhbHBuIjoiaDIsaHR0cC8xLjEiLCJm
 vmess://eyJhZGQiOiJjaGF0Z3B0LmNvbSIsImFpZCI6IjAiLCJhbHBuIjoiaDIsaHR0cC8xLjEiLCJmcCI6ImNocm9tZSIsImhvc3QiOiJrazEuZ2FtaW5nLWNlbnRlci5pciIsImlkIjoiM2E5YmIxZmUtYWRiMy00NmYzLWIxNmMtNmFmNWZkZGU1MzI2IiwiaW5zZWN1cmUiOiIwIiwibmV0Ijoid3MiLCJwYXRoIjoiLyIsInBvcnQiOiIyMDgzIiwicHMiOiJUZWxlZ3JhbV9AaVNlcWFybyIsInNjeSI6ImF1dG8iLCJzbmkiOiJrazEuZ2FtaW5nLWNlbnRlci5pciIsInRscyI6InRscyIsInR5cGUiOiItLS0iLCJ2IjoiMiJ9
 
 vmess://eyJhZGQiOiJkQy5Ub1AtbEFQdG9QLnRPUCIsImFpZCI6IjAiLCJhbHBuIjoiIiwiZnAiOiIiLCJob3N0IjoiIiwiaWQiOiJlZTRiMzJlZS0xNWZhLTQwMjctYTNmMS1iNWZmZTY4MmRlYjIiLCJuZXQiOiJ0Y3AiLCJwYXRoIjoiIiwicG9ydCI6IjQxODciLCJwcyI6IjExQGZyZWVfbmV0YyIsInNjeSI6ImF1dG8iLCJzbmkiOiIiLCJ0bHMiOiIiLCJ0eXBlIjoibm9uZSIsInYiOiIyIn0=
+
+vmess://eyJhZGQiOiJvcGVuYWkuY29tIiwiYWlkIjoiMCIsImFscG4iOiJoMixodHRwLzEuMSIsImZwIjoiY2hyb21lIiwiaG9zdCI6ImRlYWQuaW1zb29uLm5ldC4iLCJpZCI6IjE5ODY4NzMwLTI3NWItNDM5Ni05ZGNlLWE2ZDhiZGY0NjcyZCIsImluc2VjdXJlIjoiMCIsIm5ldCI6InhodHRwIiwicGF0aCI6Ii9pbV9zb29uIiwicG9ydCI6Ijg0NDMiLCJwcyI6IuKchdiz2LHZiNix2YfYpyDYqNuM2LTYqtix2K/Ysdqp2KfZhtin2YQ6cHJyb2ZpbGVfcHVycGxlQOKchSIsInNjeSI6ImF1dG8iLCJzbmkiOiJkZWFkLmltc29vbi5uZXQiLCJ0bHMiOiJ0bHMiLCJ0eXBlIjoiYXV0byIsInYiOiIyIn0=
 
