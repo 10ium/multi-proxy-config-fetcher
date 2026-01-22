@@ -12,8 +12,6 @@ vless://12345678-1234-1234-1234-123456789123@8.6.112.0:2096?path=%2Fsnippets&sec
 
 vless://1a25f8ad-cad2-4e93-b5bf-34e42bcac02a@208.103.161.33:2053/?path=%2F&security=tls&encryption=none&type=ws&sni=sni.111000.dynv6.net#@Capoit
 
-vless://2-TG-LomesNet@162.159.152.4:443?path=%2F&security=tls&alpn=h2%2Chttp%2F1.1&encryption=none&host=gotohell.waruntilvictory.xyz&fp=chrome&type=ws&sni=gotohell.waruntilvictory.xyz#@Capoit
-
 vless://2fb8808b-b94c-42ea-9dd2-cd77d2efcc8d@25.129.199.122:2096?path=%2F%3FTELEGRAM-MARAMBASHI_MARAMBASHI_MARAMBASHI_MARAMBASHI_MARAMBASHI%3Fed%3D512&security=tls&alpn=http%2F1.1&encryption=none&insecure=0&host=digikalaa.dpdns.org&fp=chrome&type=ws&allowInsecure=0&sni=DiGIkALaA.dpdns.ORG#%40MARAMBASHI%20%F0%9F%87%AB%F0%9F%87%B7
 
 vless://33f2f3cd-0d71-4ab2-b81a-39daeeaeb919@cdn.halazzon.ir:2083?mode=auto&path=%2FPenubit&security=tls&alpn=h2&encryption=none&insecure=0&host=digikala.snapp.dpdns.org&fp=chrome&type=xhttp&allowInsecure=0&sni=digikala.snapp.dpdns.org#%F0%9F%94%B0%20%40PewezaVPN%20%28%D8%AA%D9%84%DA%AF%D8%B1%D8%A7%D9%85%29
@@ -58,15 +56,11 @@ vless://bbcb720a-eee4-42da-b2d6-6b04cfcb989f@c2v5b67-795d06c416-sda2.apps.ir-cen
 
 vless://bf3303bd-17ee-4508-bf01-14c378802e61@chatgpt.com:443?path=%2F&security=tls&encryption=none&insecure=0&fp=chrome&type=ws&allowInsecure=0&sni=cdn-uk.fxcdn.ir#%F0%9F%94%B0%20%40PewezaVPN%20%28%D8%AA%D9%84%DA%AF%D8%B1%D8%A7%D9%85%29🔰 @PewezaVPN
 
-vless://c3540da5-6c0b-4d65-971f-97dfe9d58cbb@162.159.152.4:2087?path=%2F&security=tls&alpn=h3%2Ch2%2Chttp%2F1.1&encryption=none&insecure=0&fp=chrome&type=ws&allowInsecure=0&sni=cdnfr.adamedteb.com#@Capoit
-
 vless://d0298536-d670-4045-bbb1-ddd5ea68683e@8.6.112.0:443?path=%2Ftelegram-%40v2ray_alpha%3D&security=tls&encryption=none&insecure=0&host=a.azadnet003.ddns-ip.net&fp=chrome&type=ws&allowInsecure=0&sni=a.azadnet003.ddns-ip.net#@Capoit@Capoit
 
 vless://e258977b-e413-4718-a3af-02d75492c349@162.159.152.4:443?path=%2F&security=tls&encryption=none&insecure=0&host=ww23.sgxaniu.qzz.io&type=ws&allowInsecure=0&sni=ww23.sgxaniu.qzz.io#%F0%9F%94%B0%20%40PewezaVPN%20%28%D8%AA%D9%84%DA%AF%D8%B1%D8%A7%D9%85%29
 
 vless://f2aa0f74-e70c-4811-b2b2-2ced9a11adce@162.159.152.4:443?path=%2F193.23.197.183%3D443&security=tls&encryption=none&host=vermilion.qzz.io&fp=chrome&type=ws&sni=vermilion.qzz.io#%40V2Ray_Tz%20-%E2%9A%A1📱 Channel: @V2Ray_Tz
-
-vless://f2aa0f74-e70c-4811-b2b2-2ced9a11adce@8.6.112.0:443?path=%2F193.23.197.183%3D443&security=tls&encryption=none&host=vermilion.qzz.io&fp=chrome&type=ws&sni=vermilion.qzz.io#@Capoit@Capoit
 
 vless://fef4a93d-eb4f-4657-b56b-32a0dc060045@8.6.112.0:443?path=%2F&security=tls&encryption=none&insecure=0&host=dev.qsaas.dev&fp=chrome&type=ws&allowInsecure=0&sni=dev.qsaas.dev#%F0%9F%94%B0%20%40PewezaVPN%20%28%D8%AA%D9%84%DA%AF%D8%B1%D8%A7%D9%85%29
 
@@ -75,8 +69,6 @@ trojan://DPaEhASbrF@162.159.152.4:8443?mode=auto&path=%2F%40vip_fragment_v2ray&s
 trojan://DPaEhASbrF@8.6.112.0:8443?mode=auto&path=%2F%40vip_fragment_v2ray&security=tls&alpn=h2%2Chttp%2F1.1&insecure=0&host=de01.u3er1.ir.&fp=chrome&type=xhttp&allowInsecure=0&sni=de01.u3er1.ir#@Capoit@Capoit
 
 trojan://T9BpZIVMNv@162.159.152.4:8443?path=%2Famd&security=tls&alpn=h3%2Ch2%2Chttp%2F1.1&insecure=0&host=sweden.vmaxpanel.com&fp=chrome&type=ws&allowInsecure=0&sni=sweden.vmaxpanel.com#✅@AR14N24b
-
-trojan://XZ%7CP5%7DoQVc8V@8.6.112.0:443?path=%2FeyJqdW5rIjoiQng3QkdTTklpbGdldG0iLCJwcm90b2NvbCI6InRyIiwibW9kZSI6InByb3h5aXAiLCJwYW5lbElQcyI6WyI0NS4xMzUuMTY1LjI0NSIsIjExNi4yMDMuNTguMTY1Il19%3Fed%3D2560&security=tls&alpn=http%2F1.1&insecure=0&host=004.electrocellco-cf-004.workers.dev&fp=chrome&type=ws&allowInsecure=0&sni=004.eLecTrOCELLco-cf-004.WorkeRs.DEv#✅@AR14N24b
 
 vmess://ew0KICAidiI6ICIyIiwNCiAgInBzIjogIkBhcmlzcGluZyDaqdin2YbYp9mEIiwNCiAgImFkZCI6ICJjaGF0Z3B0LmNvbSIsDQogICJwb3J0IjogIjQ0MyIsDQogICJpZCI6ICJiOTkxYzVlZi02MDE2LTRlMDYtYjhmNS1iMjJhNDAwZTZhMjgiLA0KICAiYWlkIjogIjAiLA0KICAic2N5IjogImF1dG8iLA0KICAibmV0IjogIndzIiwNCiAgInR5cGUiOiAibm9uZSIsDQogICJob3N0IjogImRlLmFyaS1zLnNicyIsDQogICJwYXRoIjogIi8iLA0KICAidGxzIjogInRscyIsDQogICJzbmkiOiAiZGUuYXJpLXMuc2JzIiwNCiAgImFscG4iOiAiIiwNCiAgImZwIjogIiIsDQogICJpbnNlY3VyZSI6ICIwIg0KfQ==
 
@@ -94,9 +86,11 @@ vmess://eyJhZGQiOiI4LjYuMTEyLjAiLCJhaWQiOiIwIiwiYWxwbiI6ImgyLGh0dHAvMS4xIiwiZnAi
 
 vmess://eyJhZGQiOiIxNjIuMTU5LjE1Mi40IiwiYWlkIjoiMCIsImFscG4iOiIiLCJmcCI6ImNocm9tZSIsImhvc3QiOiJ2MnJheS5jb2RlZnlpbmMuY29tIiwiaWQiOiIyYzk4MTE2NC05YjkzLTRiY2EtOTRmZi1iNzhkM2Y4NDk4ZDciLCJuZXQiOiJ3cyIsInBhdGgiOiIvdm1lc3N3cyIsInBvcnQiOiI0NDMiLCJwcyI6IkBDYXBvaXQiLCJzY3kiOiJhdXRvIiwic25pIjoidjJyYXkuY29kZWZ5aW5jLmNvbSIsInRscyI6InRscyIsInR5cGUiOiItLS0iLCJ2IjoiMiJ9
 
-vmess://eyJhZGQiOiIxNjIuMTU5LjE1Mi40IiwiYWlkIjoiMCIsImFscG4iOiJoMyxoMixodHRwLzEuMSIsImZwIjoiY2hyb21lIiwiaG9zdCI6ImFtaXJ6YXBsdXMuYWxzYWhvYXJ2aS5jZmQiLCJpZCI6ImU1MTBkNzE4LTI2YjgtNGIwZS1lNzY4LTYwMGRkOGRiNzMyMSIsImluc2VjdXJlIjoiMCIsIm5ldCI6IndzIiwicGF0aCI6Ii8iLCJwb3J0IjoiNDQzIiwicHMiOiJAU3BvdGlmeV9Qb3J0ZWdoYWxpIDczNDUiLCJzY3kiOiJhdXRvIiwic25pIjoiYW1pcnphcGx1cy5hbHNhaG9hcnZpLmNmZCIsInRscyI6InRscyIsInR5cGUiOiItLS0iLCJ2IjoiMiJ9
+vmess://eyJhZGQiOiIxNjIuMTU5LjE1Mi40IiwiYWlkIjoiMCIsImFscG4iOiJoMixodHRwLzEuMSIsImZwIjoiY2hyb21lIiwiaG9zdCI6ImdidC5wYW56ZXJoLmNvbSIsImlkIjoiNjg4ZjQ1ZTAtOWQ3Mi00NmNmLTljY2QtYjYzOTVlOWQ3MWRlIiwiaW5zZWN1cmUiOiIwIiwibmV0Ijoid3MiLCJwYXRoIjoiL3BhbnplcmguY29tIiwicG9ydCI6Ijg0NDMiLCJwcyI6IuKaoe+4j0B2cG5iYXogfCDZhtiqINmF2YTbjCDwn4eu8J+HtyIsInNjeSI6ImF1dG8iLCJzbmkiOiJnYnQucGFuemVyaC5jb20iLCJ0bHMiOiJ0bHMiLCJ0eXBlIjoiLS0tIiwidiI6IjIifQ==
 
 vmess://eyJhZGQiOiIxNjIuMTU5LjE1Mi40IiwiYWlkIjoiMCIsImFscG4iOiJoMyxoMixodHRwLzEuMSIsImZwIjoiY2hyb21lIiwiaG9zdCI6ImFtaXJ6YXBsdXMuYWxzYWhvYXJ2aS5jZmQiLCJpZCI6ImU1MTBkNzE4LTI2YjgtNGIwZS1lNzY4LTYwMGRkOGRiNzMyMSIsImluc2VjdXJlIjoiMCIsIm5ldCI6IndzIiwicGF0aCI6Ii8iLCJwb3J0IjoiNDQzIiwicHMiOiLwn5ON8J+TsSBAYml0bW9uZXluZXQg8J+UiyIsInNjeSI6ImF1dG8iLCJzbmkiOiJhbWlyemFwbHVzLmFsc2Fob2FydmkuY2ZkIiwidGxzIjoidGxzIiwidHlwZSI6Ii0tLSIsInYiOiIyIn0=
+
+vmess://eyJhZGQiOiIxNjIuMTU5LjE1Mi40IiwiYWlkIjoiMCIsImFscG4iOiJoMyxoMixodHRwLzEuMSIsImZwIjoiY2hyb21lIiwiaG9zdCI6ImZyc3lzLmZsLWRsLmNvbSIsImlkIjoiMTllNTJiZjQtMWI3ZC00YmQ0LWFlNjYtNmNhMDI0NDM2YzE3IiwiaW5zZWN1cmUiOiIwIiwibmV0Ijoid3MiLCJwYXRoIjoiL2didCIsInBvcnQiOiI4NDQzIiwicHMiOiLimqHvuI9AdnBuYmF6IHwg2YbYqiDZhdmE24wiLCJzY3kiOiJhdXRvIiwic25pIjoiZnJzeXMuZmwtZGwuY29tIiwidGxzIjoidGxzIiwidHlwZSI6Ii0tLSIsInYiOiIyIn0=
 
 vmess://eyJhZGQiOiJ2aXAuZmlkb25ldC5pciIsImFpZCI6IjAiLCJhbHBuIjoiIiwiZnAiOiIiLCJob3N0IjoiIiwiaWQiOiJjM2Q3ZjE0ZC1kMTkwLTRhZjItOTcwMS1mYzU5MGExMzU5ZTUiLCJuZXQiOiJ0Y3AiLCJwYXRoIjoiIiwicG9ydCI6IjI1MzUzIiwicHMiOiJ0Lm1lL0tpYV9OZXQiLCJzY3kiOiJhdXRvIiwic25pIjoiIiwidGxzIjoiIiwidHlwZSI6Im5vbmUiLCJ2IjoiMiJ9
 
