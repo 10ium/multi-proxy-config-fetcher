@@ -3,6 +3,18 @@
 # List of source URLs to fetch proxy configurations from.
 # Add or remove URLs as needed. All URLs in this list are automatically enabled.
 SOURCE_URLS = [
+     "https://t.me/s/ar14n24b",
+     "https://t.me/s/SOSkeyNET",
+     "https://t.me/s/marambashi",
+     "https://t.me/s/hamedvpns",
+     "https://t.me/s/meliproxyy",
+     "https://t.me/s/v2ray_tz",
+     "https://t.me/s/capoit",
+     "https://t.me/s/free_netc",
+     "https://t.me/s/pewezavpn",
+     "https://t.me/s/configraygan",
+     "https://t.me/s/NetAccount",
+     "https://t.me/s/IraneAzad_Net"
     #     "https://raw.githubusercontent.com/4n0nymou3/wg-config-fetcher/refs/heads/main/configs/wireguard_configs.txt",
     #     "https://raw.githubusercontent.com/4n0nymou3/ss-config-updater/refs/heads/main/configs.txt",
     #     "https://raw.githubusercontent.com/valid7996/Gozargah/refs/heads/main/Gozargah_Sub",
@@ -20,20 +32,6 @@ SOURCE_URLS = [
     #     "https://raw.githubusercontent.com/Aristaproject/AristaSub/refs/heads/main/Arista6.txt",
     #     "https://raw.githubusercontent.com/Aristaproject/AristaSub/refs/heads/main/Arista7.txt",
     #     "https://raw.githubusercontent.com/Aristaproject/AristaSub/refs/heads/main/Arista8.txt",
-
-     "https://t.me/s/ar14n24b",
-     "https://t.me/s/marambashi",
-     "https://t.me/s/v2ray_tz",
-     "https://t.me/s/capoit",
-     "https://t.me/s/free_netc",
-     "https://t.me/s/pewezavpn",
-     "https://t.me/s/configraygan",
-     "https://t.me/s/hamedvpns",
-     "https://t.me/s/SOSkeyNET",
-     "https://t.me/s/meliproxyy",
-     "https://t.me/s/NetAccount",
-     "https://t.me/s/IraneAzad_Net"
-    
     #     "https://t.me/s/shadowsocksm",
     #     "https://t.me/s/v2ray_alpha",
     #     "https://t.me/s/vlessconfig",
