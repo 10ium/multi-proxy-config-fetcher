@@ -26,7 +26,14 @@ SOURCE_URLS = [
      "https://t.me/s/v2ray_tz",
      "https://t.me/s/capoit",
      "https://t.me/s/free_netc",
-     "https://t.me/s/pewezavpn"
+     "https://t.me/s/pewezavpn",
+     "https://t.me/s/configraygan",
+     "https://t.me/s/hamedvpns",
+     "https://t.me/s/SOSkeyNET",
+     "https://t.me/s/meliproxyy",
+     "https://t.me/s/NetAccount",
+     "https://t.me/s/IraneAzad_Net"
+    
     #     "https://t.me/s/shadowsocksm",
     #     "https://t.me/s/v2ray_alpha",
     #     "https://t.me/s/vlessconfig",
