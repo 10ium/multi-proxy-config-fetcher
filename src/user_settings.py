@@ -9,6 +9,7 @@ SOURCE_URLS = [
      "https://t.me/s/hamedvpns",
      "https://t.me/s/meliproxyy",
      "https://t.me/s/wiki_tajrobe",
+     "https://t.me/s/persianvpnhub",
      "https://t.me/s/sinavm",
      "https://t.me/s/tikvpnir",
      "https://t.me/s/v2ray_tz",
