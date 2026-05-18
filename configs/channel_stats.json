@@ -1,25 +1,25 @@
 {
-  "timestamp": "2026-05-18T15:16:44.961439+00:00",
+  "timestamp": "2026-05-18T19:39:15.115237+00:00",
   "channels": [
     {
       "url": "https://t.me/s/ar14n24b",
       "enabled": true,
       "metrics": {
-        "total_configs": 276,
+        "total_configs": 246,
         "valid_configs": 9,
         "unique_configs": 9,
-        "avg_response_time": 0.71,
+        "avg_response_time": 0.82,
         "success_count": 1,
         "fail_count": 0,
-        "overall_score": 74.75,
-        "last_success": "2026-05-18T15:16:10.490701+00:00",
+        "overall_score": 74.69,
+        "last_success": "2026-05-18T19:38:39.991406+00:00",
         "protocol_counts": {
           "wireguard://": 0,
           "hysteria2://": 0,
           "vless://": 0,
-          "vmess://": 6,
+          "vmess://": 5,
           "ss://": 0,
-          "trojan://": 3,
+          "trojan://": 4,
           "tuic://": 0
         }
       }
@@ -28,19 +28,19 @@
       "url": "https://t.me/s/SOSkeyNET",
       "enabled": true,
       "metrics": {
-        "total_configs": 180,
-        "valid_configs": 106,
-        "unique_configs": 101,
-        "avg_response_time": 0.27,
+        "total_configs": 172,
+        "valid_configs": 97,
+        "unique_configs": 94,
+        "avg_response_time": 0.3,
         "success_count": 1,
         "fail_count": 0,
-        "overall_score": 88.13,
-        "last_success": "2026-05-18T15:16:12.809747+00:00",
+        "overall_score": 87.88,
+        "last_success": "2026-05-18T19:38:42.341254+00:00",
         "protocol_counts": {
           "wireguard://": 0,
           "hysteria2://": 0,
-          "vless://": 101,
-          "vmess://": 5,
+          "vless://": 94,
+          "vmess://": 3,
           "ss://": 0,
           "trojan://": 0,
           "tuic://": 0
@@ -74,7 +74,7 @@
       "url": "https://t.me/s/hamedvpns",
       "enabled": false,
       "metrics": {
-        "total_configs": 0,
+        "total_configs": 1,
         "valid_configs": 0,
         "unique_configs": 0,
         "avg_response_time": 0,
@@ -143,21 +143,21 @@
       "url": "https://t.me/s/persianvpnhub",
       "enabled": true,
       "metrics": {
-        "total_configs": 6,
-        "valid_configs": 6,
-        "unique_configs": 6,
+        "total_configs": 10,
+        "valid_configs": 10,
+        "unique_configs": 9,
         "avg_response_time": 0.23,
         "success_count": 1,
         "fail_count": 0,
-        "overall_score": 99.65,
-        "last_success": "2026-05-18T15:16:24.493037+00:00",
+        "overall_score": 97.15,
+        "last_success": "2026-05-18T19:38:54.158130+00:00",
         "protocol_counts": {
           "wireguard://": 0,
           "hysteria2://": 0,
-          "vless://": 3,
-          "vmess://": 0,
-          "ss://": 0,
-          "trojan://": 3,
+          "vless://": 6,
+          "vmess://": 1,
+          "ss://": 2,
+          "trojan://": 1,
           "tuic://": 0
         }
       }
